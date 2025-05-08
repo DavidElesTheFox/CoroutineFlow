@@ -1,0 +1,23 @@
+{
+  "build": {
+    "dockerfile": "dev/Dockerfile",
+    "context": ".."
+  },
+  "mounts": ["source=.,target=/app,type=bind,consistency=cached"],
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cmake-tools",
+        "xaver.clang-format",
+        "yifei-zhang.cmake-test-tools",
+        "ericniebler.erics-build-output-colorizer",
+        "vadimcn.vscode-lldb"
+      ],
+      "settings": {
+        "editor.formatOnSave": true
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+---
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortLambdasOnASingleLine: All
+BreakBeforeBraces: Allman
+BreakInheritanceList: BeforeComma
+BreakConstructorInitializers: BeforeComma
+Cpp11BracedListStyle: false
+FixNamespaceComments: true
+IncludeBlocks: Preserve
+IndentAccessModifiers: true
+IndentCaseBlocks: true
+IndentCaseLabels: true
+IndentRequiresClause: true
+InsertBraces: true
+Language: Cpp
+NamespaceIndentation: Inner
+PointerAlignment: Left
+QualifierAlignment: Left
+ReferenceAlignment: Pointer
+SortIncludes: CaseInsensitive
+IndentWrappedFunctionNames: true
+BinPackParameters: false
+BinPackArguments: false
+AllowAllArgumentsOnNextLine: false
