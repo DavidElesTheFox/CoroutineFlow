@@ -24,7 +24,9 @@
                 "CF_BUILD_TESTS": {
                     "type": "BOOL",
                     "value": "ON"
-                }
+                },
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CF_COMPILE_OPTIONS": "-O2;-g"
             }
         }
     ],

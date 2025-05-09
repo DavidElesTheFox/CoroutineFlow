@@ -12,24 +12,10 @@ project(CoroutineFlow
 option(CF_BUILD_TESTS OFF)
 option(CF_BUILD_EXAMPLES OFF)
 
-if(CF_BUILD_TESTS)
-    enable_testing()
-endif()
 set(CF_LIB_NAME coroutine_flow)
 
 add_library(${CF_LIB_NAME} INTERFACE)
 add_library(coroutine_flow::${CF_LIB_NAME} ALIAS ${CF_LIB_NAME})
-
-if(CF_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()
-
-if(CF_BUILD_TESTS)
-    add_subdirectory(tests)
-endif()
-
-
-include(GNUInstallDirs)
 
 target_include_directories(
     ${CF_LIB_NAME}
@@ -41,8 +27,20 @@ target_include_directories(
 target_compile_features(
     ${CF_LIB_NAME}
     INTERFACE
-        cxx_std_20
+        cxx_std_23
 )
+
+
+if(CF_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+if(CF_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+include(GNUInstallDirs)
 
 install(
     TARGETS ${CF_LIB_NAME} 
