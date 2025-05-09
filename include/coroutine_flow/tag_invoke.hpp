@@ -11,7 +11,9 @@ namespace _tag_invoke
   struct func
   {
       template <typename Cpo, typename... Args>
-      constexpr auto operator()(Cpo cpo, Args&&... args) const noexcept
+      constexpr auto operator()(Cpo cpo, Args&&... args) const noexcept(
+          noexcept(tag_invoke(std::declval<Cpo>(), std::declval<Args>()...)))
+          -> decltype(tag_invoke(std::declval<Cpo>(), std::declval<Args>()...))
       {
         return tag_invoke(std::forward<Cpo>(cpo), std::forward<Args>(args)...);
       }
