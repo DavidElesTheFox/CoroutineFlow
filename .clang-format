@@ -2,6 +2,7 @@
 AllowShortEnumsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: InlineOnly
 AllowShortLambdasOnASingleLine: All
+AlwaysBreakTemplateDeclarations: true
 BreakBeforeBraces: Allman
 BreakInheritanceList: BeforeComma
 BreakConstructorInitializers: BeforeComma
