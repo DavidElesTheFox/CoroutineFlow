@@ -12,6 +12,9 @@ project(CoroutineFlow
 option(CF_BUILD_TESTS OFF)
 option(CF_BUILD_EXAMPLES OFF)
 
+if(CF_BUILD_TESTS)
+    enable_testing()
+endif()
 set(CF_LIB_NAME coroutine_flow)
 
 add_library(${CF_LIB_NAME} INTERFACE)

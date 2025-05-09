@@ -21,6 +21,11 @@ target_link_libraries(${arg_TEST_NAME}
         coroutine_flow::coroutine_flow
         Catch2::Catch2WithMain
 )
+
+add_test(
+    NAME ${arg_TEST_NAME} 
+    COMMAND ${arg_TEST_NAME}
+)
 endfunction()
 
 FetchContent_Declare(
