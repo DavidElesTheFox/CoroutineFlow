@@ -21,6 +21,10 @@ if(CF_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+if(CF_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
+
 
 include(GNUInstallDirs)
 

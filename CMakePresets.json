@@ -20,6 +20,10 @@
                 "CF_BUILD_EXAMPLES": {
                     "type": "BOOL",
                     "value": "ON"
+                },
+                "CF_BUILD_TESTS": {
+                    "type": "BOOL",
+                    "value": "ON"
                 }
             }
         }

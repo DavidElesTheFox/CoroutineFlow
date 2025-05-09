@@ -3,7 +3,9 @@
     "dockerfile": "dev/Dockerfile",
     "context": ".."
   },
-  "mounts": ["source=.,target=/app,type=bind,consistency=cached"],
+  "mounts": [
+    "source=.,target=/app,type=bind,consistency=cached"
+  ],
   "workspaceFolder": "/app",
   "customizations": {
     "vscode": {
@@ -16,7 +18,9 @@
         "vadimcn.vscode-lldb"
       ],
       "settings": {
-        "editor.formatOnSave": true
+        "editor.formatOnSave": true,
+        "clang-format.executable": "clang-format-19",
+        "C_Cpp.clang_format_style": "file"
       }
     }
   }

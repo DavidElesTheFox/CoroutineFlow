@@ -1,12 +1,32 @@
 
-add_executable(example.stdthread)
+function(add_example)
+    set(options "")
+    set(oneValueArgs TEST_NAME)
+    set(multiValueArgs SOURCES)
 
-target_sources(example.stdthread 
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/stdthread/main.cpp
+    cmake_parse_arguments(PARSE_ARGV 0 arg
+        "${options}" "${oneValueArgs}" "${multiValueArgs}"
+    )
+
+    add_executable(${arg_TEST_NAME})
+
+    target_sources(${arg_TEST_NAME} 
+        PUBLIC
+            "${arg_SOURCES}"
+    )
+
+    target_link_libraries(${arg_TEST_NAME}
+        PUBLIC
+            coroutine_flow::coroutine_flow
+    )
+endfunction()
+
+add_example(
+    TEST_NAME example.stdthread
+    SOURCES stdthread/main.cpp
 )
 
-target_link_libraries(example.stdthread 
-    PUBLIC
-        coroutine_flow::coroutine_flow
+add_example(
+    TEST_NAME example.tag_invoke
+    SOURCES tag_invoke/main.cpp
 )
