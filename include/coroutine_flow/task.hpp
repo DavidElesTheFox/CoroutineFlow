@@ -8,6 +8,7 @@
 #include <expected>
 #include <functional>
 #include <iostream>
+#include <ranges>
 
 namespace coroutine_flow
 {
@@ -32,6 +33,14 @@ class task
       std::cout << "[task::task()] {" << this << "}" << std::endl;
     }
 
+    ~task()
+    {
+      if (m_coro_handle)
+      {
+        m_coro_handle.destroy();
+      }
+    }
+
     template <typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
@@ -50,6 +59,7 @@ class task
       tag_invoke(schedule_task_t{},
                  scheduler,
                  [p_current_handle = m_coro_handle] { p_current_handle(); });
+      m_coro_handle = {};
     }
 
   private:
@@ -64,37 +74,67 @@ class task
       schedule_callback(
           [p_coro_handle = m_coro_handle,
            p_this_ptr = this,
-           p_parent_promise = parent_promise]
+           p_parent_promise = parent_promise]() mutable
           {
             std::cout << "[task::lambda01] {" << p_this_ptr << "} run task"
-                      << std::endl;
+                      << " parent_promise: " << p_parent_promise << std::endl;
 
             p_coro_handle();
-            std::cout << "[task::lambda01] {" << p_this_ptr
-                      << "} check parent promise" << std::endl;
 
-            const bool awaiter_suspended =
-                p_parent_promise->suspended_handle_barrier.test_and_set(
-                    std::memory_order_release);
             std::cout << "[task::lambda01] {" << p_this_ptr
-                      << "} check state: awaiter_suspended="
-                      << awaiter_suspended << std::endl;
+                      << "} check parent promise: " << p_coro_handle.done()
+                      << std::endl;
+            if (p_coro_handle.done())
+            {
+              const bool awaiter_suspended =
+                  p_parent_promise->suspended_handle_barrier.test_and_set(
+                      std::memory_order_release);
+              std::cout << "[task::lambda01] {" << p_this_ptr
+                        << "} check state: awaiter_suspended="
+                        << awaiter_suspended << std::endl;
 
-            if (awaiter_suspended)
+              if (awaiter_suspended)
+              {
+                std::cout << "[task::lambda01] {" << p_this_ptr
+                          << "} wait until it is stored" << std::endl;
+                p_parent_promise->suspended_handle_stored.wait(
+                    false,
+                    std::memory_order_acquire);
+                std::cout << "[task::lambda01] {" << p_this_ptr << "} resume"
+                          << std::endl;
+
+                p_parent_promise->suspended_handle();
+                for (auto& parent : p_parent_promise->predecessors)
+                {
+                  parent();
+                }
+              }
+            }
+            else
             {
               std::cout << "[task::lambda01] {" << p_this_ptr
-                        << "} wait until it is stored" << std::endl;
+                        << "} [current_suspended] wait until it is stored"
+                        << std::endl;
               p_parent_promise->suspended_handle_stored.wait(
                   false,
                   std::memory_order_acquire);
-              std::cout << "[task::lambda01] {" << p_this_ptr << "} resume"
+              std::cout << "[task::lambda01] {" << p_this_ptr << "} store"
                         << std::endl;
 
-              p_parent_promise->suspended_handle();
+              p_coro_handle.promise().predecessors.push_back(
+                  p_parent_promise->suspended_handle);
+              std::copy(
+                  p_parent_promise->predecessors.begin(),
+                  p_parent_promise->predecessors.end(),
+                  std::back_inserter(p_coro_handle.promise().predecessors));
+              p_parent_promise->predecessors.clear();
+              p_parent_promise->suspended_handle = std::noop_coroutine();
+              p_parent_promise->suspended_handle_barrier.reset();
+              p_parent_promise->suspended_handle_stored.reset();
             }
           });
       awaiter_t result;
-      result.current_handle = m_coro_handle;
+      result.current_handle = std::exchange(m_coro_handle, {});
       return result;
     }
     promise_t& get_promise() { return m_coro_handle.promise(); }
@@ -109,6 +149,7 @@ struct task<T>::promise_t
     std::coroutine_handle<> suspended_handle{ std::noop_coroutine() };
     std::atomic_flag suspended_handle_barrier;
     std::atomic_flag suspended_handle_stored;
+    std::vector<std::coroutine_handle<>> predecessors;
 
     ~promise_t() { std::cout << "[~promise_t] {" << this << "}" << std::endl; }
 
@@ -122,7 +163,7 @@ struct task<T>::promise_t
       std::cout << "[promise::initial_suspend] {" << this << "}" << std::endl;
       return {};
     }
-    std::suspend_never final_suspend() noexcept
+    std::suspend_always final_suspend() noexcept
     {
       std::cout << "[promise::final_suspend] {" << this << "}" << std::endl;
       return {};
@@ -153,13 +194,13 @@ template <typename T>
 struct task<T>::awaiter_t
 {
     std::coroutine_handle<promise_t> current_handle;
-    ~awaiter_t() { std::cout << "[~awaiter_t] {" << this << "}" << std::endl; }
+
     bool await_ready() { return current_handle.done(); }
     T await_resume() { return *current_handle.promise().result; }
     bool await_suspend(std::coroutine_handle<promise_t> suspended_handle)
     {
-      std::cout << "[awaiter::await_suspend] {" << this << "} check promise"
-                << std::endl;
+      std::cout << "[awaiter::await_suspend] {" << (&suspended_handle.promise())
+                << "} check promise" << std::endl;
 
       promise_t& promise = suspended_handle.promise();
       if (const bool finished_meanwhile =
@@ -176,7 +217,7 @@ struct task<T>::awaiter_t
       {
         std::cout << "[awaiter::await_suspend] {" << this
                   << "} promise.suspended_handle=suspended_handle;"
-                  << std::endl;
+                  << " " << &suspended_handle << std::endl;
 
         promise.suspended_handle = suspended_handle;
         promise.suspended_handle_stored.test_and_set(std::memory_order_release);

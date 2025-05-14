@@ -40,6 +40,11 @@ add_testcase(
     TEST_NAME unit.tag_invoke
     SOURCES unit/tag_invoke.cpp
 )
+add_testcase(
+    TEST_NAME unit.task_with_result
+    SOURCES unit/task_with_result.cpp
+)
+
 
 add_testcase(
     TEST_NAME functional.tag_invoke
