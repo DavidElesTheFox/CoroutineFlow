@@ -66,7 +66,7 @@ class task
   private:
     awaiter_t
         run_async(std::function<void(std::function<void()>)> schedule_callback,
-                  promise_t* parent_promise)
+                  promise_t* coro_context)
     {
       CF_PROFILE_SCOPE();
 
@@ -74,13 +74,13 @@ class task
       schedule_callback(
           [p_coro_handle = m_coro_handle,
            p_this_ptr = this,
-           p_parent_promise = parent_promise]() mutable
+           p_coro_context = coro_context]() mutable
           {
             CF_PROFILE_SCOPE_N("Task::AsyncRun");
             CF_ATTACH_NOTE("Executed handle", p_coro_handle.address());
             CF_ATTACH_NOTE("Context's handle",
-                           handle_t::from_promise(*p_parent_promise).address());
-            for (auto& p : p_parent_promise->predecessors)
+                           handle_t::from_promise(*p_coro_context).address());
+            for (auto& p : p_coro_context->predecessors)
             {
               CF_ATTACH_NOTE("Context's predecessor's handle", p.address());
             }
@@ -96,57 +96,40 @@ class task
               CF_PROFILE_ZONE(HandleDone, "Handle Done");
 
               const bool awaiter_suspended =
-                  p_parent_promise->suspended_handle_barrier.test_and_set(
+                  p_coro_context->suspended_handle_barrier.test_and_set(
                       std::memory_order_release);
 
               if (awaiter_suspended)
               {
                 CF_PROFILE_ZONE(Continue, "Continue");
 
-                p_parent_promise->suspended_handle_stored.wait(
+                p_coro_context->suspended_handle_stored.wait(
                     false,
                     std::memory_order_acquire);
+
                 auto suspended_handle =
-                    std::exchange(p_parent_promise->suspended_handle,
-                                  std::nullopt);
-                p_parent_promise->suspended_handle_barrier.clear(
-                    std::memory_order_release);
-                p_parent_promise->suspended_handle_stored.clear(
-                    std::memory_order_release);
+                    p_coro_context->reset_suspended_handle();
                 suspended_handle->resume();
                 if (suspended_handle->done())
                 {
                   CF_PROFILE_ZONE(ContinuePredecessors, "Continue Predecessor");
                   CF_ATTACH_NOTE("Predecessors parent: ",
-                                 p_parent_promise->predecessors.size());
+                                 p_coro_context->predecessors.size());
                   CF_ATTACH_NOTE("Predecessors current: ",
                                  p_coro_handle.promise().predecessors.size());
-                  for (auto it = p_parent_promise->predecessors.begin();
-                       it != p_parent_promise->predecessors.end();)
+
+                  for (auto it = p_coro_context->predecessors.begin();
+                       it != p_coro_context->predecessors.end();)
                   {
                     CF_PROFILE_ZONE(ContinueParent, "Continue Parent");
-                    auto parent = *it;
-                    if (parent.done() == false)
-                    {
-                      parent();
-                    }
-                    it = p_parent_promise->predecessors.erase(it);
+                    auto next_continuation = *it;
+                    next_continuation.resume();
+                    it = p_coro_context->predecessors.erase(it);
 
-                    if (parent.done() == false)
+                    if (next_continuation.done() == false)
                     {
                       CF_ATTACH_NOTE("Suspended");
-                      auto& new_parent_promise = parent.promise();
-                      if (p_parent_promise->suspended_handle != std::nullopt)
-                      {
-                        new_parent_promise.predecessors.push_back(
-                            *p_parent_promise->suspended_handle);
-                      }
-                      std::copy(
-                          p_parent_promise->predecessors.begin(),
-                          p_parent_promise->predecessors.end(),
-                          std::back_inserter(new_parent_promise.predecessors));
-                      p_parent_promise->suspended_handle = std::nullopt;
-                      p_parent_promise->predecessors.clear();
+                      next_continuation.promise().take_over(*p_coro_context);
                       break;
                     }
                     else
@@ -161,24 +144,10 @@ class task
             {
               CF_PROFILE_ZONE(StoreContinuation, "Store Confinuation");
 
-              p_parent_promise->suspended_handle_stored.wait(
+              p_coro_context->suspended_handle_stored.wait(
                   false,
                   std::memory_order_acquire);
-
-              p_coro_handle.promise().predecessors.push_back(
-                  *p_parent_promise->suspended_handle);
-              std::copy(
-                  p_parent_promise->predecessors.begin(),
-                  p_parent_promise->predecessors.end(),
-                  std::back_inserter(p_coro_handle.promise().predecessors));
-              p_parent_promise->predecessors.clear();
-              p_parent_promise->suspended_handle = std::nullopt;
-              p_parent_promise->suspended_handle_barrier.clear(
-                  std::memory_order_release);
-              p_parent_promise->suspended_handle_stored.clear(
-                  std::memory_order_release);
-              p_parent_promise->suspended_handle_barrier.notify_all();
-              p_parent_promise->suspended_handle_stored.notify_all();
+              p_coro_handle.promise().take_over(*p_coro_context);
               CF_ATTACH_NOTE("Predecessors: ",
                              p_coro_handle.promise().predecessors.size());
             }
@@ -202,6 +171,28 @@ struct task<T>::promise_t
     std::list<std::coroutine_handle<promise_t>> predecessors;
 
     ~promise_t() { CF_PROFILE_SCOPE(); }
+
+    std::optional<std::coroutine_handle<promise_t>> reset_suspended_handle()
+    {
+      auto result = std::exchange(suspended_handle, std::nullopt);
+      suspended_handle_barrier.clear(std::memory_order_release);
+      suspended_handle_stored.clear(std::memory_order_release);
+      suspended_handle_barrier.notify_all();
+      suspended_handle_stored.notify_all();
+      return result;
+    }
+
+    void take_over(promise_t& o)
+    {
+      if (o.suspended_handle != std::nullopt)
+      {
+        predecessors.push_back(*o.reset_suspended_handle());
+      }
+      std::copy(o.predecessors.begin(),
+                o.predecessors.end(),
+                std::back_inserter(predecessors));
+      o.predecessors.clear();
+    }
 
     task<T> get_return_object()
     {

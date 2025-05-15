@@ -5,6 +5,8 @@
     from 1st level
     from 2nd level
     from 3rd level
+ - execution:
+    mixed return value
  - when suspenned called after object destroyed. (functional)
  - return types:
     reference
@@ -155,7 +157,7 @@ class Event
     bool m_once_triggered{ false };
 };
 
-constexpr const std::chrono::duration c_test_case_timeout = 10min;
+constexpr const std::chrono::duration c_test_case_timeout = 1s;
 
 TEST_CASE("Check Destructor when not scheduled", "[task]")
 {
@@ -166,6 +168,8 @@ TEST_CASE("Check Destructor when not scheduled", "[task]")
   }
   REQUIRE(coroutine_state_destroyed);
 }
+
+#pragma region Execution Tests
 
 TEST_CASE("Neasted coroutine level 1", "[task]")
 {
@@ -798,3 +802,5 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
   REQUIRE(coro_3_call_count == 3);
   REQUIRE(coro_4_call_count == 1);
 }
+
+#pragma endregion
