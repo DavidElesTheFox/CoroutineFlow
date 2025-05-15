@@ -5,14 +5,6 @@
     from 1st level
     from 2nd level
     from 3rd level
- - check execution:
-    1 await
-    2 await
-    3 await
-    1 level
-    2 level
-    3 level
-    4 level
  - when suspenned called after object destroyed. (functional)
  - return types:
     reference
@@ -553,5 +545,256 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
   REQUIRE(coro_1_call_count == 8);
   REQUIRE(coro_2_call_count == 4);
   REQUIRE(coro_3_call_count == 2);
+  REQUIRE(coro_4_call_count == 1);
+}
+
+TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto [called_event_1, called_token_1] =
+      Event::create("coroutine 1 is called");
+  std::atomic_uint32_t coro_1_call_count = 0;
+  auto coro_1 = [p_called_event = &called_event_1,
+                 &coro_1_call_count]() mutable -> cf::task<int>
+  {
+    p_called_event->trigger();
+    coro_1_call_count++;
+    co_return 1;
+  };
+
+  auto [called_event_2, called_token_2] =
+      Event::create("coroutine 2 is called");
+  std::atomic_uint32_t coro_2_call_count = 0;
+
+  auto coro_2 = [p_called_event = std::move(called_event_2),
+                 &coro_1,
+                 &p_coro_call_count =
+                     coro_2_call_count]() mutable -> cf::task<int>
+  {
+    int result = co_await coro_1();
+    REQUIRE(result == 1);
+    result = co_await coro_1();
+    REQUIRE(result == 1);
+    result = co_await coro_1();
+    REQUIRE(result == 1);
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 2;
+  };
+
+  coro_2().run_async(&thread_pool);
+
+  REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
+  REQUIRE(coro_1_call_count == 3);
+  REQUIRE(coro_2_call_count == 1);
+}
+
+TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
+{
+  CF_PROFILE_SCOPE();
+  SimpleThreadPool thread_pool;
+
+  // Coroutine 1
+  auto [called_event_1, called_token_1] =
+      Event::create("coroutine 1 is called");
+  std::atomic_uint32_t coro_1_call_count = 0;
+
+  auto coro_1 = [p_called_event = std::move(called_event_1),
+                 &p_coro_call_count =
+                     coro_1_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_1");
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 1;
+  };
+
+  // Coroutine 2
+  auto [called_event_2, called_token_2] =
+      Event::create("coroutine 2 is called");
+  std::atomic_uint32_t coro_2_call_count = 0;
+
+  auto coro_2 = [p_called_event = std::move(called_event_2),
+                 &coro_1,
+                 &p_coro_call_count =
+                     coro_2_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_2 01");
+
+    int result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 02");
+    REQUIRE(result == 1);
+
+    result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 03");
+    REQUIRE(result == 1);
+
+    result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 04");
+    REQUIRE(result == 1);
+
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 2;
+  };
+
+  // Coroutine 3
+  auto [called_event_3, called_token_3] =
+      Event::create("coroutine 3 is called");
+  std::atomic_uint32_t coro_3_call_count = 0;
+
+  auto coro_3 = [p_called_event = std::move(called_event_3),
+                 &coro_2,
+                 &p_coro_call_count =
+                     coro_3_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_3 01");
+
+    int result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 02");
+    REQUIRE(result == 2);
+
+    result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 03");
+    REQUIRE(result == 2);
+
+    result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 04");
+    REQUIRE(result == 2);
+
+    p_called_event.trigger();
+    p_coro_call_count++;
+
+    co_return 3;
+  };
+
+  coro_3().run_async(&thread_pool);
+
+  REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
+  REQUIRE(coro_1_call_count == 9);
+  REQUIRE(coro_2_call_count == 3);
+  REQUIRE(coro_3_call_count == 1);
+}
+
+TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
+{
+  CF_PROFILE_SCOPE();
+
+  SimpleThreadPool thread_pool;
+
+  // Coroutine 1
+  auto [called_event_1, called_token_1] =
+      Event::create("coroutine 1 is called");
+  std::atomic_uint32_t coro_1_call_count = 0;
+
+  auto coro_1 = [p_called_event = std::move(called_event_1),
+                 &p_coro_call_count =
+                     coro_1_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_1");
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 1;
+  };
+
+  // Coroutine 2
+  auto [called_event_2, called_token_2] =
+      Event::create("coroutine 2 is called");
+  std::atomic_uint32_t coro_2_call_count = 0;
+
+  auto coro_2 = [p_called_event = std::move(called_event_2),
+                 &coro_1,
+                 &p_coro_call_count =
+                     coro_2_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_2 01");
+
+    int result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 02");
+    REQUIRE(result == 1);
+
+    result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 03");
+    REQUIRE(result == 1);
+
+    result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 04");
+    REQUIRE(result == 1);
+
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 2;
+  };
+
+  // Coroutine 3
+  auto [called_event_3, called_token_3] =
+      Event::create("coroutine 3 is called");
+  std::atomic_uint32_t coro_3_call_count = 0;
+
+  auto coro_3 = [p_called_event = std::move(called_event_3),
+                 &coro_2,
+                 &p_coro_call_count =
+                     coro_3_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_3 01");
+
+    int result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 02");
+    REQUIRE(result == 2);
+
+    result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 03");
+    REQUIRE(result == 2);
+
+    result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 04");
+    REQUIRE(result == 2);
+
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 3;
+  };
+
+  // Coroutine 4
+  auto [called_event_4, called_token_4] =
+      Event::create("coroutine 4 is called");
+  std::atomic_uint32_t coro_4_call_count = 0;
+
+  auto coro_4 = [p_called_event = std::move(called_event_4),
+                 &coro_3,
+                 &p_coro_call_count =
+                     coro_4_call_count]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_4 01");
+
+    int result = co_await coro_3();
+    CF_PROFILE_MARK("coro_4 02");
+    REQUIRE(result == 3);
+
+    result = co_await coro_3();
+    CF_PROFILE_MARK("coro_4 03");
+    REQUIRE(result == 3);
+
+    result = co_await coro_3();
+    CF_PROFILE_MARK("coro_4 04");
+    REQUIRE(result == 3);
+
+    p_called_event.trigger();
+    p_coro_call_count++;
+    co_return 3;
+  };
+
+  coro_4().run_async(&thread_pool);
+
+  REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_4.is_triggered(c_test_case_timeout));
+  REQUIRE(coro_1_call_count == 27);
+  REQUIRE(coro_2_call_count == 9);
+  REQUIRE(coro_3_call_count == 3);
   REQUIRE(coro_4_call_count == 1);
 }
