@@ -11,6 +11,7 @@ project(CoroutineFlow
 
 option(CF_BUILD_TESTS OFF)
 option(CF_BUILD_EXAMPLES OFF)
+option(CF_USE_TRACY OFF)
 
 set(CF_LIB_NAME coroutine_flow)
 
@@ -28,6 +29,29 @@ target_compile_features(
     ${CF_LIB_NAME}
     INTERFACE
         cxx_std_23
+)
+
+if(CF_USE_TRACY)
+    include(FetchContent)
+    set(TRACY_NO_EXIT ON CACHE INTERNAL "Do not exit until trace is collected.")
+
+    FetchContent_Declare(
+        TracyLib
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.11.1
+    )
+    FetchContent_MakeAvailable(TracyLib)
+
+    target_link_libraries(
+        ${CF_LIB_NAME}
+        INTERFACE
+            Tracy::TracyClient
+    )
+endif()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/lib_config.hpp.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/coroutine_flow/lib_config.hpp
 )
 
 
