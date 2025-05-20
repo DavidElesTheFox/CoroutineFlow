@@ -29,3 +29,6 @@
 
 # Build directories
 build*/
+
+# Generated files
+include/coroutine_flow/lib_config.hpp

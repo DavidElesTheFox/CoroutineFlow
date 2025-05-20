@@ -1,0 +1,3 @@
+#pragma once
+
+#cmakedefine01 CF_USE_TRACY

@@ -229,6 +229,8 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
   auto coro_1 = [p_called_event =
                      std::move(called_event_1)]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_1");
+
     p_called_event.trigger();
     co_return 1;
   };
@@ -240,8 +242,11 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
   auto coro_2 = [p_called_event = std::move(called_event_2),
                  &coro_1]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_2");
+
     int result = co_await coro_1();
     REQUIRE(result == 1);
+    CF_PROFILE_MARK("coro_2-2");
     p_called_event.trigger();
     co_return 2;
   };
@@ -253,7 +258,10 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
   auto coro_3 = [p_called_event = std::move(called_event_3),
                  &coro_2]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_3");
+
     int result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3-2");
     REQUIRE(result == 2);
     p_called_event.trigger();
     co_return 3;
@@ -803,4 +811,44 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
   REQUIRE(coro_4_call_count == 1);
 }
 
+TEST_CASE("Mixed data", "[task]")
+{
+  CF_PROFILE_SCOPE();
+
+  SimpleThreadPool thread_pool;
+  auto [called_event_1, called_token_1] =
+      Event::create("coroutine 1 is called");
+  auto [called_event_2, called_token_2] =
+      Event::create("coroutine 2 is called");
+  auto [called_event_3, called_token_3] =
+      Event::create("coroutine 3 is called");
+  auto coro_1 = [event = std::move(called_event_1)]() mutable -> cf::task<int>
+  {
+    event.trigger();
+    co_return 2;
+  };
+
+  auto coro_2 =
+      [event = std::move(called_event_1)]() mutable -> cf::task<std::string>
+  {
+    event.trigger();
+    co_return "42";
+  };
+
+  auto coro_3 = [&,
+                 event = std::move(called_event_3)]() mutable -> cf::task<int>
+  {
+    int number = co_await coro_1();
+    std::string str = co_await coro_2();
+    REQUIRE(number == 2);
+    REQUIRE(str == "42");
+    event.trigger();
+    co_return 2;
+  };
+
+  coro_3().run_async(&thread_pool);
+  REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
+  REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
+}
 #pragma endregion
