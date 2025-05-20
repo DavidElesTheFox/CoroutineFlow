@@ -92,7 +92,9 @@ class task
             CF_PROFILE_SCOPE_N("Task::AsyncRun");
             CF_ATTACH_NOTE("Executed handle", p_coro_handle.address());
             CF_ATTACH_NOTE("Context's handle",
-                           handle_t::from_promise(*p_coro_context).address());
+                           std::coroutine_handle<other_promise_t>::from_promise(
+                               *p_coro_context)
+                               .address());
             for (auto& p : p_coro_context->predecessors)
             {
               CF_ATTACH_NOTE("Context's predecessor's handle",

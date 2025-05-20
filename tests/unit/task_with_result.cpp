@@ -824,13 +824,15 @@ TEST_CASE("Mixed data", "[task]")
       Event::create("coroutine 3 is called");
   auto coro_1 = [event = std::move(called_event_1)]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_1");
     event.trigger();
     co_return 2;
   };
 
   auto coro_2 =
-      [event = std::move(called_event_1)]() mutable -> cf::task<std::string>
+      [event = std::move(called_event_2)]() mutable -> cf::task<std::string>
   {
+    CF_PROFILE_MARK("coro_2");
     event.trigger();
     co_return "42";
   };
@@ -838,8 +840,11 @@ TEST_CASE("Mixed data", "[task]")
   auto coro_3 = [&,
                  event = std::move(called_event_3)]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_3 01");
     int number = co_await coro_1();
+    CF_PROFILE_MARK("coro_3 02");
     std::string str = co_await coro_2();
+    CF_PROFILE_MARK("coro_3 03");
     REQUIRE(number == 2);
     REQUIRE(str == "42");
     event.trigger();
