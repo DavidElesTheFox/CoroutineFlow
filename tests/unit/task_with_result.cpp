@@ -5,8 +5,6 @@
     from 1st level
     from 2nd level
     from 3rd level
- - execution:
-    mixed return value
  - when suspenned called after object destroyed. (functional)
  - return types:
     reference

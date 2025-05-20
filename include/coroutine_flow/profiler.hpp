@@ -26,11 +26,13 @@ inline std::string format_profile_notes(Args&&... args)
     std::string str = format_profile_notes(__VA_ARGS__);                       \
     ZoneText(str.c_str(), str.size());                                         \
   }
+#define CF_PROFILER_ACTIVE 1
 #else
 #define CF_PROFILE_SCOPE()
 #define CF_PROFILE_SCOPE_N(name)
 #define CF_PROFILE_ZONE(varname, name)
 #define CF_PROFILE_MARK(name)
 #define CF_ATTACH_NOTE(...)
+#define CF_PROFILER_ACTIVE 0
 
 #endif

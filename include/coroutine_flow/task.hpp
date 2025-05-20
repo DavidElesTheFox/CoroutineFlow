@@ -26,6 +26,164 @@ namespace details__
       std::coroutine_handle<> coro;
       std::function<void(std::list<continuation_data>&)> take_over;
   };
+
+  template <typename promise_type>
+  class ExecutionDirector;
+
+  template <typename promise_type>
+  concept coroutine_executable = requires(promise_type promise) {
+    {
+      promise.get_execution_director()
+    } -> std::same_as<ExecutionDirector<promise_type>&>;
+  };
+
+  template <typename promise_type>
+  class ExecutionDirector
+  {
+    private:
+      std::optional<std::coroutine_handle<promise_type>> m_suspended_handle;
+      std::atomic_flag m_suspended_handle_barrier;
+      std::atomic_flag m_suspended_handle_stored;
+      std::list<details__::continuation_data> m_predecessors;
+
+    public:
+      template <typename other_promise_type>
+      friend class ExecutionDirector;
+
+      const std::list<details__::continuation_data>& get_predecessors() const
+      {
+        return m_predecessors;
+      }
+
+      std::optional<std::coroutine_handle<promise_type>>
+          reset_suspended_handle()
+      {
+        auto result = std::exchange(m_suspended_handle, std::nullopt);
+        m_suspended_handle_barrier.clear(std::memory_order_release);
+        m_suspended_handle_stored.clear(std::memory_order_release);
+        m_suspended_handle_barrier.notify_all();
+        m_suspended_handle_stored.notify_all();
+        return result;
+      }
+      template <coroutine_executable other_promise_type>
+      static continuation_data
+          create_data(std::coroutine_handle<other_promise_type> handler)
+      {
+        continuation_data result;
+        result.coro = handler;
+        result.take_over = [=](std::list<continuation_data>& p_predecessors)
+        {
+          other_promise_type& promise = handler.promise();
+          promise.get_execution_director().take_over(p_predecessors);
+        };
+        return result;
+      }
+
+      template <coroutine_executable other_promise_type>
+      void take_over(ExecutionDirector<other_promise_type>& o)
+      {
+        take_over(o.m_predecessors);
+      }
+
+      void continue_suspended_handle()
+      {
+        CF_PROFILE_SCOPE();
+
+        const bool awaiter_suspended =
+            m_suspended_handle_barrier.test_and_set(std::memory_order_release);
+
+        if (awaiter_suspended == false)
+        {
+          return;
+        }
+
+        CF_PROFILE_ZONE(Continue, "Continue all predecessors");
+
+        m_suspended_handle_stored.wait(false, std::memory_order_acquire);
+
+        auto suspended_handle = reset_suspended_handle();
+        suspended_handle->resume();
+        if (suspended_handle->done() == false)
+        {
+          return;
+        }
+
+        CF_PROFILE_ZONE(ContinuePredecessors, "Continue Predecessor");
+        CF_ATTACH_NOTE("Predecessors count: ", m_predecessors.size());
+        for (auto it = m_predecessors.begin(); it != m_predecessors.end();)
+        {
+          CF_PROFILE_ZONE(ContinueParent, "Continue an anchestor");
+          auto next_continuation = *it;
+          next_continuation.coro.resume();
+          it = m_predecessors.erase(it);
+
+          if (next_continuation.coro.done() == false)
+          {
+            CF_ATTACH_NOTE("Suspended");
+
+            if (m_suspended_handle != std::nullopt)
+            {
+              auto data = create_data(*reset_suspended_handle());
+              m_predecessors.push_front(std::move(data));
+            }
+
+            next_continuation.take_over(m_predecessors);
+            break;
+          }
+          else
+          {
+            CF_ATTACH_NOTE("Done");
+          }
+        }
+      }
+
+      template <coroutine_executable other_promise_type>
+      void move_into(ExecutionDirector<other_promise_type>& o)
+      {
+        CF_PROFILE_SCOPE();
+
+        m_suspended_handle_stored.wait(false, std::memory_order_acquire);
+        if (m_suspended_handle != std::nullopt)
+        {
+          auto data = create_data(*reset_suspended_handle());
+          m_predecessors.push_front(std::move(data));
+        }
+        o.take_over(*this);
+        CF_ATTACH_NOTE("Predecessors: ", o.m_predecessors.size());
+      }
+
+      bool try_store_suspended_handle(
+          std::coroutine_handle<promise_type> suspended_handle)
+      {
+        if (const bool finished_meanwhile =
+                m_suspended_handle_barrier.test_and_set(
+                    std::memory_order_acquire);
+            finished_meanwhile)
+        {
+          CF_PROFILE_ZONE(suspend_no_wait, "Suspend no wait");
+
+          return false;
+        }
+        else
+        {
+          CF_PROFILE_ZONE(suspend_wait, "Suspend store");
+
+          m_suspended_handle = suspended_handle;
+          m_suspended_handle_stored.test_and_set(std::memory_order_release);
+          m_suspended_handle_stored.notify_all();
+          return true;
+        }
+      }
+
+    private:
+      void take_over(std::list<continuation_data>& predecessors)
+      {
+        std::copy(predecessors.begin(),
+                  predecessors.end(),
+                  std::back_inserter(m_predecessors));
+        predecessors.clear();
+      }
+  };
 } // namespace details__
 
 template <typename T>
@@ -76,7 +234,7 @@ class task
     }
 
   private:
-    template <typename other_promise_t>
+    template <details__::coroutine_executable other_promise_t>
     awaiter_t
         run_async(std::function<void(std::function<void()>)> schedule_callback,
                   other_promise_t* coro_context)
@@ -95,15 +253,20 @@ class task
                            std::coroutine_handle<other_promise_t>::from_promise(
                                *p_coro_context)
                                .address());
-            for (auto& p : p_coro_context->predecessors)
+#if CF_PROFILER_ACTIVE
+            for (const auto& p :
+                 p_coro_context->get_execution_director().get_predecessors())
             {
               CF_ATTACH_NOTE("Context's predecessor's handle",
                              p.coro.address());
             }
-            for (auto& p : p_coro_handle.promise().predecessors)
+            for (const auto& p : p_coro_handle.promise()
+                                     .get_execution_director()
+                                     .get_predecessors())
             {
               CF_ATTACH_NOTE("Current predecessor's handle", p.coro.address());
             }
+#endif
 
             p_coro_handle();
 
@@ -111,76 +274,13 @@ class task
             {
               CF_PROFILE_ZONE(HandleDone, "Handle Done");
 
-              const bool awaiter_suspended =
-                  p_coro_context->suspended_handle_barrier.test_and_set(
-                      std::memory_order_release);
-
-              if (awaiter_suspended)
-              {
-                CF_PROFILE_ZONE(Continue, "Continue");
-
-                p_coro_context->suspended_handle_stored.wait(
-                    false,
-                    std::memory_order_acquire);
-
-                auto suspended_handle =
-                    p_coro_context->reset_suspended_handle();
-                suspended_handle->resume();
-                if (suspended_handle->done())
-                {
-                  CF_PROFILE_ZONE(ContinuePredecessors, "Continue Predecessor");
-                  CF_ATTACH_NOTE("Predecessors parent: ",
-                                 p_coro_context->predecessors.size());
-                  CF_ATTACH_NOTE("Predecessors current: ",
-                                 p_coro_handle.promise().predecessors.size());
-
-                  for (auto it = p_coro_context->predecessors.begin();
-                       it != p_coro_context->predecessors.end();)
-                  {
-                    CF_PROFILE_ZONE(ContinueParent, "Continue Parent");
-                    auto next_continuation = *it;
-                    next_continuation.coro.resume();
-                    it = p_coro_context->predecessors.erase(it);
-
-                    if (next_continuation.coro.done() == false)
-                    {
-                      CF_ATTACH_NOTE("Suspended");
-
-                      if (p_coro_context->suspended_handle != std::nullopt)
-                      {
-                        auto data = promise_t::create_data(
-                            *p_coro_context->reset_suspended_handle());
-                        p_coro_context->predecessors.push_front(
-                            std::move(data));
-                      }
-
-                      next_continuation.take_over(p_coro_context->predecessors);
-                      break;
-                    }
-                    else
-                    {
-                      CF_ATTACH_NOTE("Done");
-                    }
-                  }
-                }
-              }
+              p_coro_context->get_execution_director()
+                  .continue_suspended_handle();
             }
             else
             {
-              CF_PROFILE_ZONE(StoreContinuation, "Store Confinuation");
-
-              p_coro_context->suspended_handle_stored.wait(
-                  false,
-                  std::memory_order_acquire);
-              if (p_coro_context->suspended_handle != std::nullopt)
-              {
-                auto data = promise_t::create_data(
-                    *p_coro_context->reset_suspended_handle());
-                p_coro_context->predecessors.push_front(std::move(data));
-              }
-              p_coro_handle.promise().take_over(*p_coro_context);
-              CF_ATTACH_NOTE("Predecessors: ",
-                             p_coro_handle.promise().predecessors.size());
+              p_coro_context->get_execution_director().move_into(
+                  p_coro_handle.promise().get_execution_director());
             }
           });
       awaiter_t result;
@@ -194,51 +294,17 @@ class task
 template <typename T>
 struct task<T>::promise_t
 {
-    std::function<void(std::function<void()>)> schedule_callback;
     std::expected<T, std::exception_ptr> result;
-    std::optional<std::coroutine_handle<promise_t>> suspended_handle;
-    std::atomic_flag suspended_handle_barrier;
-    std::atomic_flag suspended_handle_stored;
-    std::list<details__::continuation_data> predecessors;
+
+    std::function<void(std::function<void()>)> schedule_callback;
+    details__::ExecutionDirector<task<T>::promise_t> execution_director;
 
     ~promise_t() { CF_PROFILE_SCOPE(); }
 
-    std::optional<std::coroutine_handle<promise_t>> reset_suspended_handle()
+    details__::ExecutionDirector<task<T>::promise_t>& get_execution_director()
     {
-      auto result = std::exchange(suspended_handle, std::nullopt);
-      suspended_handle_barrier.clear(std::memory_order_release);
-      suspended_handle_stored.clear(std::memory_order_release);
-      suspended_handle_barrier.notify_all();
-      suspended_handle_stored.notify_all();
-      return result;
+      return execution_director;
     }
-    template <typename other_promise_type>
-    static details__::continuation_data
-        create_data(std::coroutine_handle<other_promise_type> handler)
-    {
-      details__::continuation_data result;
-      result.coro = handler;
-      result.take_over =
-          [=](std::list<details__::continuation_data>& p_predecessors)
-      {
-        other_promise_type& promise = handler.promise();
-        std::copy(p_predecessors.begin(),
-                  p_predecessors.end(),
-                  std::back_inserter(promise.predecessors));
-        p_predecessors.clear();
-      };
-      return result;
-    }
-
-    template <typename other_promise_type>
-    void take_over(other_promise_type& o)
-    {
-      std::copy(o.predecessors.begin(),
-                o.predecessors.end(),
-                std::back_inserter(predecessors));
-      o.predecessors.clear();
-    }
-
     task<T> get_return_object()
     {
       CF_PROFILE_SCOPE();
@@ -289,7 +355,7 @@ struct task<T>::awaiter_t
       CF_PROFILE_SCOPE();
       return *current_handle.promise().result;
     }
-    template <typename other_promise_type>
+    template <details__::coroutine_executable other_promise_type>
     bool await_suspend(
         std::coroutine_handle<other_promise_type> suspended_handle)
     {
@@ -297,24 +363,8 @@ struct task<T>::awaiter_t
 
       other_promise_type& promise = suspended_handle.promise();
       CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
-      if (const bool finished_meanwhile =
-              promise.suspended_handle_barrier.test_and_set(
-                  std::memory_order_acquire);
-          finished_meanwhile)
-      {
-        CF_PROFILE_ZONE(suspend_no_wait, "Suspend no wait");
-
-        return false;
-      }
-      else
-      {
-        CF_PROFILE_ZONE(suspend_wait, "Suspend store");
-
-        promise.suspended_handle = suspended_handle;
-        promise.suspended_handle_stored.test_and_set(std::memory_order_release);
-        promise.suspended_handle_stored.notify_all();
-        return true;
-      }
+      return promise.get_execution_director().try_store_suspended_handle(
+          suspended_handle);
     }
 };
 } // namespace coroutine_flow
