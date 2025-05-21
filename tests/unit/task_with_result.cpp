@@ -6,13 +6,6 @@
     from 2nd level
     from 3rd level
  - when suspenned called after object destroyed. (functional)
- - return types:
-    reference
-    pointer
-    tuple
-    non copyable (rvalue)
-    non moveable (lvalue)
-    has no default constructor
  - nothrow coroutine
 */
 #include <catch2/catch_test_macros.hpp>
@@ -27,6 +20,19 @@
 namespace cf = coroutine_flow;
 using namespace std::chrono_literals;
 
+struct NonDefaultConstructibleClass
+{
+    NonDefaultConstructibleClass() = delete;
+    explicit NonDefaultConstructibleClass(int) {};
+    NonDefaultConstructibleClass(NonDefaultConstructibleClass&&) = default;
+    NonDefaultConstructibleClass(const NonDefaultConstructibleClass&) = default;
+
+    NonDefaultConstructibleClass&
+        operator=(NonDefaultConstructibleClass&&) = default;
+    NonDefaultConstructibleClass&
+        operator=(const NonDefaultConstructibleClass&) = default;
+};
+
 struct NonCopyableClass
 {
     NonCopyableClass() = default;
@@ -37,14 +43,14 @@ struct NonCopyableClass
     NonCopyableClass& operator=(const NonCopyableClass&) = delete;
 };
 
-struct NonMoveableClass
+struct NonMovableClass
 {
-    NonMoveableClass() = default;
-    NonMoveableClass(NonMoveableClass&&) = delete;
-    NonMoveableClass(const NonMoveableClass&) = default;
+    NonMovableClass() = default;
+    NonMovableClass(NonMovableClass&&) = delete;
+    NonMovableClass(const NonMovableClass&) = default;
 
-    NonMoveableClass& operator=(NonMoveableClass&&) = delete;
-    NonMoveableClass& operator=(const NonMoveableClass&) = default;
+    NonMovableClass& operator=(NonMovableClass&&) = delete;
+    NonMovableClass& operator=(const NonMovableClass&) = default;
 };
 
 struct OnExit
@@ -853,5 +859,127 @@ TEST_CASE("Mixed data", "[task]")
   REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
+}
+#pragma endregion
+
+#pragma region Return Type test
+
+TEST_CASE("Non Copyable return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  auto coro_1 = []() -> cf::task<NonCopyableClass>
+  { co_return NonCopyableClass{}; };
+
+  auto coro_2 = [&]() -> cf::task<NonCopyableClass>
+  {
+    auto result = co_await coro_1();
+    co_return result;
+  };
+
+  coro_2().run_async(&thread_pool);
+  SUCCEED("This test needs to be only compiled");
+}
+
+TEST_CASE("Non Moveable return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  auto coro_1 = []() -> cf::task<NonMovableClass>
+  { co_return NonMovableClass{}; };
+
+  auto coro_2 = [&]() -> cf::task<NonMovableClass>
+  {
+    auto result = co_await coro_1();
+    co_return result;
+  };
+
+  coro_2().run_async(&thread_pool);
+  SUCCEED("This test needs to be only compiled");
+}
+
+TEST_CASE("Reference return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  int my_int = 0;
+  auto [event, token] = Event::create("coroutine finished");
+
+  auto coro_1 = [&]() mutable -> cf::task<std::reference_wrapper<int>>
+  { co_return my_int; };
+
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    int& my_int_reference = co_await coro_1();
+    my_int_reference = 1;
+    event.trigger();
+    co_return my_int_reference;
+  };
+
+  coro_2().run_async(&thread_pool);
+  REQUIRE(token.is_triggered(c_test_case_timeout));
+  REQUIRE(my_int == 1);
+  SUCCEED("This test needs to be only compiled");
+}
+
+TEST_CASE("Pointer return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  int my_int = 0;
+  auto [event, token] = Event::create("coroutine finished");
+
+  auto coro_1 = [&]() mutable -> cf::task<int*> { co_return &my_int; };
+
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    int* my_int_ptr = co_await coro_1();
+    *my_int_ptr = 1;
+    event.trigger();
+    co_return *my_int_ptr;
+  };
+
+  coro_2().run_async(&thread_pool);
+  REQUIRE(token.is_triggered(c_test_case_timeout));
+  REQUIRE(my_int == 1);
+  SUCCEED("This test needs to be only compiled");
+}
+
+TEST_CASE("Tuple return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto [event, token] = Event::create("coroutine finished");
+
+  auto coro_1 = [&]() mutable -> cf::task<std::tuple<int, float, std::string>>
+  { co_return std::tuple{ 1, 2.0f, "hi" }; };
+
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    auto [my_int, my_float, my_string] = co_await coro_1();
+    REQUIRE(my_int == 1);
+    REQUIRE(my_float == 2.0f);
+    REQUIRE(my_string == "hi");
+    event.trigger();
+
+    co_return 2;
+  };
+
+  coro_2().run_async(&thread_pool);
+  REQUIRE(token.is_triggered(c_test_case_timeout));
+  SUCCEED("This test needs to be only compiled");
+}
+TEST_CASE("Non default constructible return type", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  auto coro_1 = [&]() mutable -> cf::task<NonDefaultConstructibleClass>
+  { co_return NonDefaultConstructibleClass{ 1 }; };
+
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    auto non_default_constructible = co_await coro_1();
+    co_return 2;
+  };
+
+  coro_2().run_async(&thread_pool);
+  SUCCEED("This test needs to be only compiled");
 }
 #pragma endregion

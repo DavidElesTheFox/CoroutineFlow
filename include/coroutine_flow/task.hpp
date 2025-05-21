@@ -294,7 +294,7 @@ class task
 template <typename T>
 struct task<T>::promise_t
 {
-    std::expected<T, std::exception_ptr> result;
+    std::expected<std::optional<T>, std::exception_ptr> result;
 
     std::function<void(std::function<void()>)> schedule_callback;
     details__::ExecutionDirector<task<T>::promise_t> execution_director;
@@ -320,11 +320,29 @@ struct task<T>::promise_t
       CF_PROFILE_SCOPE();
       return {};
     }
-    T return_value(T&& t)
+
+    template <typename R>
+      requires std::is_move_constructible_v<std::remove_reference_t<R>> &&
+               std::is_constructible_v<T, R&&>
+    void return_value(R&& val)
     {
       CF_PROFILE_SCOPE();
-      result = t;
-      return t;
+      result = std::optional<T>(std::forward<R>(val));
+    }
+    template <typename R>
+      requires std::is_copy_constructible_v<std::remove_reference_t<R>> &&
+               std::is_constructible_v<T, const R&>
+    void return_value(const R& val)
+    {
+      CF_PROFILE_SCOPE();
+      result = std::optional<T>(val);
+    }
+    template <typename R>
+      requires std::is_constructible_v<T, R*>
+    void return_value(R* val)
+    {
+      CF_PROFILE_SCOPE();
+      result = std::optional<T>(val);
     }
     void unhandled_exception()
     {
@@ -353,7 +371,14 @@ struct task<T>::awaiter_t
     T await_resume()
     {
       CF_PROFILE_SCOPE();
-      return *current_handle.promise().result;
+      if constexpr (std::movable<T>)
+      {
+        return std::move(**current_handle.promise().result);
+      }
+      else
+      {
+        return **current_handle.promise().result;
+      }
     }
     template <details__::coroutine_executable other_promise_type>
     bool await_suspend(
