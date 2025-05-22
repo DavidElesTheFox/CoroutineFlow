@@ -5,8 +5,20 @@
     from 1st level
     from 2nd level
     from 3rd level
+    in promise functions:
+     - return value
+     - unhandle exception
+     - await transform
+     - initial suspend
+     - final suspend
+     - get return object
+    in awaiter:
+     - await_ready
+     - await_resume
+     - await_suspend
  - when suspenned called after object destroyed. (functional)
  - nothrow coroutine
+ - get function
 */
 #include <catch2/catch_test_macros.hpp>
 
@@ -161,6 +173,14 @@ class Event
     bool m_once_triggered{ false };
 };
 
+struct TestException : std::runtime_error
+{
+    TestException()
+        : std::runtime_error("This exception is a test exception.")
+    {
+    }
+};
+
 constexpr const std::chrono::duration c_test_case_timeout = 1s;
 
 TEST_CASE("Check Destructor when not scheduled", "[task]")
@@ -289,6 +309,7 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   auto coro_1 = [p_called_event =
                      std::move(called_event_1)]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_1");
     p_called_event.trigger();
     co_return 1;
   };
@@ -300,7 +321,9 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   auto coro_2 = [p_called_event = std::move(called_event_2),
                  &coro_1]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_2-0");
     int result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2-1");
     REQUIRE(result == 1);
     p_called_event.trigger();
     co_return 2;
@@ -313,7 +336,9 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   auto coro_3 = [p_called_event = std::move(called_event_3),
                  &coro_2]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_3-0");
     int result = co_await coro_2();
+    CF_PROFILE_MARK("coro_3-1");
     REQUIRE(result == 2);
     p_called_event.trigger();
     co_return 3;
@@ -324,7 +349,9 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   auto coro_4 = [p_called_event = std::move(called_event_4),
                  &coro_3]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_4-0");
     int result = co_await coro_3();
+    CF_PROFILE_MARK("coro_4-1");
     REQUIRE(result == 3);
     p_called_event.trigger();
     co_return 4;
@@ -982,4 +1009,21 @@ TEST_CASE("Non default constructible return type", "[task]")
   coro_2().run_async(&thread_pool);
   SUCCEED("This test needs to be only compiled");
 }
+#pragma endregion
+
+#pragma region Exception Tests
+/*
+TEST_CASE("Coroutine with exception", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto coro = []() -> cf::task<int>
+  {
+    throw TestException{};
+    co_return 2;
+  };
+
+  auto async_result = coro().run_async(&thread_pool);
+  REQUIRE_THROWS_AS(std::move(async_result).sync_wait(), TestException);
+}
+*/
 #pragma endregion
