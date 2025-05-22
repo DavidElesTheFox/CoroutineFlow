@@ -25,9 +25,9 @@ namespace details__
   struct continuation_data
   {
       std::coroutine_handle<> coro;
-      // std::function<void(std::list<continuation_data>&)> take_over;
       std::function<void(continuation_data)> set_next;
       std::function<continuation_data&()> get_next;
+
       bool is_empty() const { return set_next == nullptr; }
       void clear() { set_next = nullptr; }
   };
@@ -49,19 +49,11 @@ namespace details__
       std::optional<std::coroutine_handle<promise_type>> m_suspended_handle;
       std::atomic_flag m_suspended_handle_barrier;
       std::atomic_flag m_suspended_handle_stored;
-      // std::list<details__::continuation_data> m_predecessors;
       details__::continuation_data m_next;
 
     public:
       template <typename other_promise_type>
       friend class ExecutionDirector;
-      /*
-            const std::list<details__::continuation_data>& get_predecessors()
-         const
-            {
-              return m_predecessors;
-            }
-      */
       std::optional<std::coroutine_handle<promise_type>>
           reset_suspended_handle()
       {
@@ -78,11 +70,6 @@ namespace details__
       {
         continuation_data result;
         result.coro = handler;
-        /*result.take_over = [=](std::list<continuation_data>& p_predecessors)
-        {
-          other_promise_type& promise = handler.promise();
-          promise.get_execution_director().take_over(p_predecessors);
-        };*/
         result.set_next = [=](continuation_data continuation_data)
         {
           other_promise_type& promise = handler.promise();
@@ -97,12 +84,6 @@ namespace details__
         return result;
       }
 
-      /*     template <coroutine_executable other_promise_type>
-           void take_over(ExecutionDirector<other_promise_type>& o)
-           {
-             take_over(o.m_predecessors);
-           }
-     */
       void continue_suspended_handle()
       {
         CF_PROFILE_SCOPE();
@@ -125,69 +106,26 @@ namespace details__
         {
           return;
         }
-        continuation_data next = m_next;
-        if (next.is_empty())
-        {
-          CF_ATTACH_NOTE("No next");
-        }
-        else
-        {
-          CF_ATTACH_NOTE("next:", next.coro.address());
-        }
-        while (next.is_empty() == false)
+        continuation_data current = m_next;
+        while (current.is_empty() == false)
         {
           CF_PROFILE_ZONE(SetNext, "Continue next");
           // TODO: check this condition. When exception occurred resume was null
-          if (next.coro.done() == false)
+          if (current.coro.done() == false)
           {
-            next.coro();
+            current.coro();
           }
-          if (next.coro.done() == false)
+          if (current.coro.done())
           {
-            CF_ATTACH_NOTE("Suspended", next.coro.address());
-            CF_ATTACH_NOTE("insert", m_suspended_handle->address());
-            auto current_data = create_data(*reset_suspended_handle());
-            current_data.set_next(next.get_next());
-            next.set_next(current_data);
-            break;
+            CF_ATTACH_NOTE("Finished");
+            current = current.get_next();
+            CF_ATTACH_NOTE(next.coro.address());
           }
           else
           {
-            CF_ATTACH_NOTE("Finished");
-            next = next.get_next();
-            CF_ATTACH_NOTE(next.coro.address());
+            break;
           }
         }
-        /*
-                CF_PROFILE_ZONE(ContinuePredecessors, "Continue Predecessor");
-                CF_ATTACH_NOTE("Predecessors count: ", m_predecessors.size());
-                for (auto it = m_predecessors.begin(); it !=
-           m_predecessors.end();)
-                {
-                  CF_PROFILE_ZONE(ContinueParent, "Continue an anchestor");
-                  auto next_continuation = *it;
-                  next_continuation.coro.resume();
-                  it = m_predecessors.erase(it);
-
-                  if (next_continuation.coro.done() == false)
-                  {
-                    CF_ATTACH_NOTE("Suspended");
-
-                    if (m_suspended_handle != std::nullopt)
-                    {
-                      auto data = create_data(*reset_suspended_handle());
-                      m_predecessors.push_front(std::move(data));
-                    }
-
-                    next_continuation.take_over(m_predecessors);
-                    break;
-                  }
-                  else
-                  {
-                    CF_ATTACH_NOTE("Done");
-                  }
-                }
-                  */
       }
 
       template <coroutine_executable other_promise_type>
@@ -198,18 +136,10 @@ namespace details__
         m_suspended_handle_stored.wait(false, std::memory_order_acquire);
         CF_ATTACH_NOTE("current:", m_suspended_handle->address());
         CF_ATTACH_NOTE("next:", o.m_next.coro.address());
-        auto current_data = create_data(*reset_suspended_handle());
-        current_data.set_next(m_next);
-        o.m_next = current_data;
-        /*
-        if (m_suspended_handle != std::nullopt)
-        {
-          auto data = create_data(*reset_suspended_handle());
-          m_predecessors.push_front(std::move(data));
-        }
-        o.take_over(*this);
-        CF_ATTACH_NOTE("Predecessors: ", o.m_predecessors.size());
-        */
+
+        auto suspended_data = create_data(*reset_suspended_handle());
+        suspended_data.set_next(m_next);
+        o.m_next = suspended_data;
       }
 
       bool try_store_suspended_handle(
@@ -236,15 +166,6 @@ namespace details__
       }
 
     private:
-      /*
-        void take_over(std::list<continuation_data>& predecessors)
-        {
-          std::copy(predecessors.begin(),
-                    predecessors.end(),
-                    std::back_inserter(m_predecessors));
-          predecessors.clear();
-        }
-          */
   };
 
 } // namespace details__
@@ -300,7 +221,7 @@ class task
     template <details__::coroutine_executable other_promise_t>
     awaiter_t
         run_async(std::function<void(std::function<void()>)> schedule_callback,
-                  other_promise_t* coro_context)
+                  other_promise_t* suspended_promise)
     {
       CF_PROFILE_SCOPE();
 
@@ -308,30 +229,14 @@ class task
       schedule_callback(
           [p_coro_handle = m_coro_handle,
            p_this_ptr = this,
-           p_coro_context = coro_context]() mutable
+           p_suspended_promise = suspended_promise]() mutable
           {
             CF_PROFILE_SCOPE_N("Task::AsyncRun");
             CF_ATTACH_NOTE("Executed handle", p_coro_handle.address());
             CF_ATTACH_NOTE("Context's handle",
                            std::coroutine_handle<other_promise_t>::from_promise(
-                               *p_coro_context)
+                               *p_suspended_promise)
                                .address());
-            /*
-#if CF_PROFILER_ACTIVE
-for (const auto& p :
-p_coro_context->get_execution_director().get_predecessors())
-{
-CF_ATTACH_NOTE("Context's predecessor's handle",
-          p.coro.address());
-}
-for (const auto& p : p_coro_handle.promise()
-                  .get_execution_director()
-                  .get_predecessors())
-{
-CF_ATTACH_NOTE("Current predecessor's handle", p.coro.address());
-}
-#endif
-**/
 
             p_coro_handle();
 
@@ -339,12 +244,12 @@ CF_ATTACH_NOTE("Current predecessor's handle", p.coro.address());
             {
               CF_PROFILE_ZONE(HandleDone, "Handle Done");
 
-              p_coro_context->get_execution_director()
+              p_suspended_promise->get_execution_director()
                   .continue_suspended_handle();
             }
             else
             {
-              p_coro_context->get_execution_director().move_into(
+              p_suspended_promise->get_execution_director().move_into(
                   p_coro_handle.promise().get_execution_director());
             }
           });

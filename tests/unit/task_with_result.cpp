@@ -182,7 +182,6 @@ struct TestException : std::runtime_error
 };
 
 constexpr const std::chrono::duration c_test_case_timeout = 1s;
-
 TEST_CASE("Check Destructor when not scheduled", "[task]")
 {
   bool coroutine_state_destroyed = false;
