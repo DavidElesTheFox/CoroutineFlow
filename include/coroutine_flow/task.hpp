@@ -20,7 +20,7 @@ struct schedule_task_t
 {
 };
 
-namespace details__
+namespace __details
 {
   struct continuation_data
   {
@@ -33,27 +33,27 @@ namespace details__
   };
 
   template <typename promise_type>
-  class ExecutionDirector;
+  class coroutine_chain_t;
 
   template <typename promise_type>
   concept coroutine_executable = requires(promise_type promise) {
     {
-      promise.get_execution_director()
-    } -> std::same_as<ExecutionDirector<promise_type>&>;
+      promise.get_coroutine_chain()
+    } -> std::same_as<coroutine_chain_t<promise_type>&>;
   };
 
   template <typename promise_type>
-  class ExecutionDirector
+  class coroutine_chain_t
   {
     private:
       std::optional<std::coroutine_handle<promise_type>> m_suspended_handle;
       std::atomic_flag m_suspended_handle_barrier;
       std::atomic_flag m_suspended_handle_stored;
-      details__::continuation_data m_next;
+      __details::continuation_data m_next;
 
     public:
       template <typename other_promise_type>
-      friend class ExecutionDirector;
+      friend class coroutine_chain_t;
       std::optional<std::coroutine_handle<promise_type>>
           reset_suspended_handle()
       {
@@ -73,13 +73,12 @@ namespace details__
         result.set_next = [=](continuation_data continuation_data)
         {
           other_promise_type& promise = handler.promise();
-          promise.get_execution_director().m_next =
-              std::move(continuation_data);
+          promise.get_coroutine_chain().m_next = std::move(continuation_data);
         };
         result.get_next = [=]() -> continuation_data&
         {
           other_promise_type& promise = handler.promise();
-          return promise.get_execution_director().m_next;
+          return promise.get_coroutine_chain().m_next;
         };
         return result;
       }
@@ -129,7 +128,7 @@ namespace details__
       }
 
       template <coroutine_executable other_promise_type>
-      void move_into(ExecutionDirector<other_promise_type>& o)
+      void move_into(coroutine_chain_t<other_promise_type>& o)
       {
         CF_PROFILE_SCOPE();
 
@@ -168,7 +167,7 @@ namespace details__
     private:
   };
 
-} // namespace details__
+} // namespace __details
 
 template <typename T>
 class task
@@ -218,7 +217,7 @@ class task
     }
 
   private:
-    template <details__::coroutine_executable other_promise_t>
+    template <__details::coroutine_executable other_promise_t>
     awaiter_t
         run_async(std::function<void(std::function<void()>)> schedule_callback,
                   other_promise_t* suspended_promise)
@@ -244,13 +243,13 @@ class task
             {
               CF_PROFILE_ZONE(HandleDone, "Handle Done");
 
-              p_suspended_promise->get_execution_director()
+              p_suspended_promise->get_coroutine_chain()
                   .continue_suspended_handle();
             }
             else
             {
-              p_suspended_promise->get_execution_director().move_into(
-                  p_coro_handle.promise().get_execution_director());
+              p_suspended_promise->get_coroutine_chain().move_into(
+                  p_coro_handle.promise().get_coroutine_chain());
             }
           });
       awaiter_t result;
@@ -267,13 +266,13 @@ struct task<T>::promise_t
     std::expected<std::optional<T>, std::exception_ptr> result;
 
     std::function<void(std::function<void()>)> schedule_callback;
-    details__::ExecutionDirector<task<T>::promise_t> execution_director;
+    __details::coroutine_chain_t<task<T>::promise_t> coroutine_chain;
 
     ~promise_t() { CF_PROFILE_SCOPE(); }
 
-    details__::ExecutionDirector<task<T>::promise_t>& get_execution_director()
+    __details::coroutine_chain_t<task<T>::promise_t>& get_coroutine_chain()
     {
-      return execution_director;
+      return coroutine_chain;
     }
     task<T> get_return_object()
     {
@@ -350,7 +349,7 @@ struct task<T>::awaiter_t
         return **current_handle.promise().result;
       }
     }
-    template <details__::coroutine_executable other_promise_type>
+    template <__details::coroutine_executable other_promise_type>
     bool await_suspend(
         std::coroutine_handle<other_promise_type> suspended_handle)
     {
@@ -358,7 +357,7 @@ struct task<T>::awaiter_t
 
       other_promise_type& promise = suspended_handle.promise();
       CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
-      return promise.get_execution_director().try_store_suspended_handle(
+      return promise.get_coroutine_chain().try_store_suspended_handle(
           suspended_handle);
     }
 };
