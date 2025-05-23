@@ -154,6 +154,7 @@ template <typename T>
 struct task<T>::promise_t
 {
     std::expected<std::optional<T>, std::exception_ptr> result;
+    std::atomic_flag result_stored;
 
     std::function<void(std::function<void()>)> schedule_callback;
     __details::coroutine_chain_t<task<T>::promise_t> coroutine_chain;
@@ -191,6 +192,10 @@ struct task<T>::promise_t
       CF_PROFILE_SCOPE();
       if (execute_extension)
       {
+        /*
+         No need for memory synchronization because return_value should be
+         written on the same thread where final_suspend
+        */
         if constexpr (std::movable<T>)
         {
           return extension(std::move(result));
@@ -213,6 +218,8 @@ struct task<T>::promise_t
     {
       CF_PROFILE_SCOPE();
       result = std::optional<T>(std::forward<R>(val));
+      result_stored.test_and_set(std::memory_order_release);
+      result_stored.notify_all();
     }
     template <typename R>
       requires std::is_copy_constructible_v<std::remove_reference_t<R>> &&
@@ -221,6 +228,8 @@ struct task<T>::promise_t
     {
       CF_PROFILE_SCOPE();
       result = std::optional<T>(val);
+      result_stored.notify_all();
+      result_stored.test_and_set(std::memory_order_release);
     }
     template <typename R>
       requires std::is_constructible_v<T, R*>
@@ -228,12 +237,16 @@ struct task<T>::promise_t
     {
       CF_PROFILE_SCOPE();
       result = std::optional<T>(val);
+      result_stored.test_and_set(std::memory_order_release);
+      result_stored.notify_all();
     }
     void unhandled_exception()
     {
       CF_PROFILE_SCOPE();
 
       result = std::unexpected(std::current_exception());
+      result_stored.test_and_set(std::memory_order_release);
+      result_stored.notify_all();
     }
     template <typename U>
     auto await_transform(task<U> task)
@@ -251,12 +264,13 @@ struct task<T>::awaiter_t
     bool await_ready()
     {
       CF_PROFILE_SCOPE();
-      return current_handle.done();
+      return false;
     }
     T await_resume()
     {
       CF_PROFILE_SCOPE();
       promise_t& promise = current_handle.promise();
+      promise.result_stored.wait(false, std::memory_order_acquire);
       if (promise.result.has_value())
       {
         if constexpr (std::movable<T>)
