@@ -51,16 +51,6 @@ class coroutine_chain_t
     {
       CF_PROFILE_SCOPE();
 
-      const bool awaiter_suspended =
-          m_suspended_handle_barrier.test_and_set(std::memory_order_release);
-
-      if (awaiter_suspended == false)
-      {
-        return;
-      }
-
-      CF_PROFILE_ZONE(Continue, "Continue all predecessors");
-
       m_suspended_handle_stored.wait(false, std::memory_order_acquire);
 
       auto suspended_handle = reset_suspended_handle();
@@ -102,27 +92,15 @@ class coroutine_chain_t
       o.m_next = std::move(suspended_data);
     }
 
-    bool try_store_suspended_handle(
+    void store_suspended_handle(
         std::coroutine_handle<promise_type> suspended_handle) noexcept
     {
-      if (const bool finished_meanwhile =
-              m_suspended_handle_barrier.test_and_set(
-                  std::memory_order_acquire);
-          finished_meanwhile)
-      {
-        CF_PROFILE_ZONE(suspend_no_wait, "Suspend no wait");
 
-        return false;
-      }
-      else
-      {
-        CF_PROFILE_ZONE(suspend_wait, "Suspend store");
+      CF_PROFILE_ZONE(suspend_wait, "Suspend store");
 
-        m_suspended_handle = suspended_handle;
-        m_suspended_handle_stored.test_and_set(std::memory_order_release);
-        m_suspended_handle_stored.notify_all();
-        return true;
-      }
+      m_suspended_handle = suspended_handle;
+      m_suspended_handle_stored.test_and_set(std::memory_order_release);
+      m_suspended_handle_stored.notify_all();
     }
 };
 

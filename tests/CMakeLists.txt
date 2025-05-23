@@ -21,6 +21,10 @@ target_link_libraries(${arg_TEST_NAME}
         coroutine_flow::coroutine_flow
         Catch2::Catch2WithMain
 )
+target_link_options(${arg_TEST_NAME}
+    PUBLIC
+       ${CF_LINK_OPTIONS}
+)
 
 add_test(
     NAME ${arg_TEST_NAME} 
@@ -50,3 +54,4 @@ add_testcase(
     TEST_NAME functional.tag_invoke
     SOURCES functional/tag_invoke.cpp
 )
+

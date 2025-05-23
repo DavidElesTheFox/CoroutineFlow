@@ -4,6 +4,7 @@ RUN apt update && apt upgrade
 
 RUN apt update && apt install -y \
  g++ \
+ clang-19 \
  cmake \
  cmake-curses-gui \
  binutils \

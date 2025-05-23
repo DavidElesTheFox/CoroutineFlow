@@ -271,6 +271,7 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
   auto coro_1 = [p_called_event =
                      std::move(called_event_1)]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_1");
     p_called_event.trigger();
     co_return 1;
   };
@@ -281,13 +282,16 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
   auto coro_2 = [p_called_event = std::move(called_event_2),
                  &coro_1]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_2_1");
+
     int result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2_2");
     REQUIRE(result == 1);
     p_called_event.trigger();
     co_return 2;
   };
 
-  coro_2().run_async(&thread_pool);
+  coro_2().run_async(&thread_pool).sync_wait().get();
 
   REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -418,6 +422,7 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
 
 TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
 {
+  CF_PROFILE_SCOPE();
   SimpleThreadPool thread_pool;
   auto [called_event_1, called_token_1] =
       Event::create("coroutine 1 is called");
@@ -425,8 +430,9 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
   auto coro_1 = [p_called_event = &called_event_1,
                  &coro_1_call_count]() mutable -> cf::task<int>
   {
-    p_called_event->trigger();
+    CF_PROFILE_MARK("coro_1");
     coro_1_call_count++;
+    p_called_event->trigger();
     co_return 1;
   };
 
@@ -439,12 +445,15 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
                  &p_coro_call_count =
                      coro_2_call_count]() mutable -> cf::task<int>
   {
+    CF_PROFILE_MARK("coro_2 01");
     int result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 02");
     REQUIRE(result == 1);
     result = co_await coro_1();
+    CF_PROFILE_MARK("coro_2 03");
     REQUIRE(result == 1);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -471,8 +480,8 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
                      coro_1_call_count]() mutable -> cf::task<int>
   {
     CF_PROFILE_MARK("coro_1");
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 1;
   };
 
@@ -496,8 +505,8 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
     CF_PROFILE_MARK("coro_2 03");
 
     REQUIRE(result == 1);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -521,8 +530,8 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
     CF_PROFILE_MARK("coro_3 03");
 
     REQUIRE(result == 2);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
 
     co_return 3;
   };
@@ -553,8 +562,8 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
                      coro_1_call_count]() mutable -> cf::task<int>
   {
     CF_PROFILE_MARK("coro_1");
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 1;
   };
 
@@ -578,8 +587,8 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
     CF_PROFILE_MARK("coro_2 03");
 
     REQUIRE(result == 1);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -603,8 +612,8 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
     CF_PROFILE_MARK("coro_3 03");
 
     REQUIRE(result == 2);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 3;
   };
 
@@ -625,8 +634,8 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
     result = co_await coro_3();
     CF_PROFILE_MARK("coro_4 03");
     REQUIRE(result == 3);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 3;
   };
 
@@ -651,8 +660,8 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
   auto coro_1 = [p_called_event = &called_event_1,
                  &coro_1_call_count]() mutable -> cf::task<int>
   {
-    p_called_event->trigger();
     coro_1_call_count++;
+    p_called_event->trigger();
     co_return 1;
   };
 
@@ -671,8 +680,8 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
     REQUIRE(result == 1);
     result = co_await coro_1();
     REQUIRE(result == 1);
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -699,8 +708,8 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
                      coro_1_call_count]() mutable -> cf::task<int>
   {
     CF_PROFILE_MARK("coro_1");
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 1;
   };
 
@@ -728,8 +737,8 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
     CF_PROFILE_MARK("coro_2 04");
     REQUIRE(result == 1);
 
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -757,8 +766,8 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
     CF_PROFILE_MARK("coro_3 04");
     REQUIRE(result == 2);
 
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
 
     co_return 3;
   };
@@ -789,8 +798,8 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
                      coro_1_call_count]() mutable -> cf::task<int>
   {
     CF_PROFILE_MARK("coro_1");
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 1;
   };
 
@@ -818,8 +827,8 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
     CF_PROFILE_MARK("coro_2 04");
     REQUIRE(result == 1);
 
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 2;
   };
 
@@ -847,8 +856,8 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
     CF_PROFILE_MARK("coro_3 04");
     REQUIRE(result == 2);
 
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 3;
   };
 
@@ -876,8 +885,8 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
     CF_PROFILE_MARK("coro_4 04");
     REQUIRE(result == 3);
 
-    p_called_event.trigger();
     p_coro_call_count++;
+    p_called_event.trigger();
     co_return 3;
   };
 

@@ -261,7 +261,7 @@ struct task<T>::awaiter_t
 {
     std::coroutine_handle<promise_t> current_handle;
 
-    bool await_ready()
+    static bool await_ready()
     {
       CF_PROFILE_SCOPE();
       return false;
@@ -288,15 +288,14 @@ struct task<T>::awaiter_t
       }
     }
     template <__details::coroutine_chain_holder other_promise_type>
-    static bool await_suspend(
+    static void await_suspend(
         std::coroutine_handle<other_promise_type> suspended_handle)
     {
       CF_PROFILE_SCOPE();
 
       other_promise_type& promise = suspended_handle.promise();
       CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
-      return promise.get_coroutine_chain().try_store_suspended_handle(
-          suspended_handle);
+      promise.get_coroutine_chain().store_suspended_handle(suspended_handle);
     }
 };
 } // namespace coroutine_flow
