@@ -1,21 +1,4 @@
 /*
- - check exception handling:
-    during promise construction
-    during result copy
-    from 1st level
-    from 2nd level
-    from 3rd level
-    in promise functions:
-     - return value
-     - unhandle exception
-     - await transform
-     - initial suspend
-     - final suspend
-     - get return object
-    in awaiter:
-     - await_ready
-     - await_resume
-     - await_suspend
  - when suspenned called after object destroyed. (functional)
  - nothrow coroutine
  - get function
@@ -32,6 +15,13 @@
 
 namespace cf = coroutine_flow;
 using namespace std::chrono_literals;
+struct TestException : std::runtime_error
+{
+    TestException()
+        : std::runtime_error("This exception is a test exception.")
+    {
+    }
+};
 
 struct NonDefaultConstructibleClass
 {
@@ -72,6 +62,64 @@ struct OnExit
     std::function<void()> callback;
 };
 
+template <bool throw_at_copy_constructor,
+          bool throw_at_copy_assign,
+          bool throw_at_move_constructor,
+          bool throw_at_move_assign>
+struct ThrowingClass
+{
+    ThrowingClass() = default;
+    ThrowingClass(const ThrowingClass&)
+    {
+      if constexpr (throw_at_copy_constructor)
+      {
+        throw TestException{};
+      }
+    }
+    ThrowingClass(ThrowingClass&&)
+    {
+      if constexpr (throw_at_move_constructor)
+      {
+        throw TestException{};
+      }
+    }
+    ThrowingClass& operator=(const ThrowingClass&)
+    {
+      if constexpr (throw_at_copy_assign)
+      {
+        throw TestException{};
+      }
+    }
+    ThrowingClass& operator=(ThrowingClass&&)
+    {
+      if constexpr (throw_at_move_assign)
+      {
+        throw TestException{};
+      }
+    }
+};
+
+template <bool throw_at_copy_constructor, bool throw_at_copy_assign>
+struct NonMovableThrowingClass
+{
+    NonMovableThrowingClass() = default;
+    NonMovableThrowingClass(const NonMovableThrowingClass&)
+    {
+      if constexpr (throw_at_copy_constructor)
+      {
+        throw TestException{};
+      }
+    }
+    NonMovableThrowingClass(NonMovableThrowingClass&&) = delete;
+    NonMovableThrowingClass& operator=(const NonMovableThrowingClass&)
+    {
+      if constexpr (throw_at_copy_assign)
+      {
+        throw TestException{};
+      }
+    }
+    NonMovableThrowingClass& operator=(NonMovableThrowingClass&&) = delete;
+};
 class SimpleThreadPool
 {
   public:
@@ -79,6 +127,18 @@ class SimpleThreadPool
                            SimpleThreadPool* pool,
                            std::function<void()> callback)
     {
+      auto check_and_throw = [&](uint32_t limit) -> std::optional<int>
+      {
+        if (limit <= pool->m_current_schedule_count)
+        {
+          throw TestException();
+        }
+        return limit;
+      };
+
+      pool->m_throw_at_schedule.and_then(check_and_throw);
+      pool->m_current_schedule_count++;
+
       pool->m_threads.emplace_back(
           [p_callback = callback](std::stop_token stop_token)
           {
@@ -112,9 +172,12 @@ class SimpleThreadPool
         }
       }
     }
+    void set_throw_at_schedule(uint32_t count) { m_throw_at_schedule = count; }
 
   private:
     std::list<std::jthread> m_threads;
+    std::optional<uint32_t> m_throw_at_schedule;
+    uint32_t m_current_schedule_count = 0;
 };
 
 class Event
@@ -172,14 +235,6 @@ class Event
     std::string m_name;
     std::promise<bool> m_triggered;
     bool m_once_triggered{ false };
-};
-
-struct TestException : std::runtime_error
-{
-    TestException()
-        : std::runtime_error("This exception is a test exception.")
-    {
-    }
 };
 
 constexpr const std::chrono::duration c_test_case_timeout = 1s;
@@ -1012,7 +1067,7 @@ TEST_CASE("Non default constructible return type", "[task]")
 #pragma endregion
 
 #pragma region Exception Tests
-/*
+
 TEST_CASE("Coroutine with exception", "[task]")
 {
   SimpleThreadPool thread_pool;
@@ -1022,8 +1077,305 @@ TEST_CASE("Coroutine with exception", "[task]")
     co_return 2;
   };
 
-  auto async_result = coro().run_async(&thread_pool);
-  REQUIRE_THROWS_AS(std::move(async_result).sync_wait(), TestException);
+  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
 }
-*/
+
+TEST_CASE("Coroutine with exception 2nd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto [exception_forwarded_event, exception_forwarded_token] =
+      Event::create("Exception forwarded");
+
+  auto coro = []() -> cf::task<int>
+  {
+    throw TestException{};
+    co_return 2;
+  };
+
+  auto coro_2 = [&]() mutable -> cf::task<int>
+  {
+    try
+    {
+      int result = co_await coro();
+      co_return result + 1;
+    }
+    catch (const TestException& e)
+    {
+      exception_forwarded_event.trigger();
+      throw e;
+    }
+    co_return -1;
+  };
+
+  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+  REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
+}
+
+TEST_CASE("Coroutine with exception 3rd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto [exception_forwarded_event, exception_forwarded_token] =
+      Event::create("Exception forwarded");
+  auto [exception_forwarded_2_event, exception_forwarded_2_token] =
+      Event::create("Exception forwarded 2");
+  auto coro = []() -> cf::task<int>
+  {
+    throw TestException{};
+    co_return 2;
+  };
+
+  auto coro_2 = [&]() mutable -> cf::task<int>
+  {
+    try
+    {
+      int result = co_await coro();
+      co_return result + 1;
+    }
+    catch (const TestException& e)
+    {
+      exception_forwarded_event.trigger();
+      throw e;
+    }
+    co_return -1;
+  };
+
+  auto coro_3 = [&]() mutable -> cf::task<int>
+  {
+    try
+    {
+      int result = co_await coro_2();
+      co_return result + 1;
+    }
+    catch (const TestException& e)
+    {
+      exception_forwarded_2_event.trigger();
+      throw e;
+    }
+    co_return -1;
+  };
+
+  REQUIRE_THROWS_AS(coro_3().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+  REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
+  REQUIRE(exception_forwarded_2_token.is_triggered(c_test_case_timeout));
+}
+
+TEST_CASE("Coroutine with exception after co_await", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto [exception_forwarded_event, exception_forwarded_token] =
+      Event::create("Exception forwarded");
+
+  auto coro = []() -> cf::task<int> { co_return 2; };
+
+  auto coro_2 = [&]() mutable -> cf::task<int>
+  {
+    int result = co_await coro();
+    throw TestException{};
+
+    co_return result;
+  };
+
+  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+
+TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
+{
+  CF_PROFILE_SCOPE();
+  SimpleThreadPool thread_pool;
+  auto [exception_forwarded_event, exception_forwarded_token] =
+      Event::create("Exception forwarded");
+
+  auto coro = []() -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro");
+    co_return 2;
+  };
+
+  auto coro_2 = [&]() mutable -> cf::task<int>
+  {
+    CF_PROFILE_MARK("coro_2");
+    int result = co_await coro();
+    CF_PROFILE_MARK("coro_2_2");
+
+    throw TestException{};
+
+    co_return result;
+  };
+  auto coro_3 = [&]() mutable -> cf::task<int>
+  {
+    try
+    {
+      CF_PROFILE_MARK("coro_3");
+
+      int result = co_await coro_2();
+      CF_PROFILE_MARK("coro_3_1");
+
+      co_return result + 1;
+    }
+    catch (const TestException& e)
+    {
+      CF_PROFILE_MARK("coro_3_2");
+
+      exception_forwarded_event.trigger();
+      throw e;
+    }
+    co_return -1;
+  };
+
+  REQUIRE_THROWS_AS(coro_3().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+  REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
+}
+
+TEST_CASE("Exception during schedule", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  thread_pool.set_throw_at_schedule(0);
+
+  auto coro = []() -> cf::task<int> { co_return 2; };
+
+  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+
+TEST_CASE("Exception during schedule inside coroutine", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  thread_pool.set_throw_at_schedule(1);
+
+  auto coro = []() -> cf::task<int> { co_return 2; };
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    int result = co_await coro();
+    co_return result + 1;
+  };
+
+  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+
+TEST_CASE("Exception during move", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+
+  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+TEST_CASE("Exception during move 2nd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    co_await coro();
+    co_return 2;
+  };
+
+  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+TEST_CASE("No Exception during move assign", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+
+  coro().run_async(&thread_pool).sync_wait().get();
+  SUCCEED("Test pass when no exception occurrs");
+}
+
+TEST_CASE("No Exception during move assign 2nd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    auto result = co_await coro();
+    co_return 2;
+  };
+
+  coro_2().run_async(&thread_pool).sync_wait().get();
+  SUCCEED("Test pass when no exception occurrs");
+}
+TEST_CASE("No Exception during movable class during copy", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+
+  coro().run_async(&thread_pool).sync_wait().get();
+  SUCCEED("Test pass when no exception occurrs");
+}
+
+TEST_CASE("No Exception during movable class during copy 2nd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    auto result = co_await coro();
+    co_return 2;
+  };
+
+  coro_2().run_async(&thread_pool).sync_wait().get();
+  SUCCEED("Test pass when no exception occurrs");
+}
+/* Future doesn't supports non movable class
+TEST_CASE("Exception during copy in nonmovable class", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = NonMovableThrowingClass<true, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+
+  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().h(),
+                    TestException);
+}
+TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
+{
+  SimpleThreadPool thread_pool;
+
+  using CurrentThrowingClass = NonMovableThrowingClass<true, true>;
+
+  auto coro = []() -> cf::task<CurrentThrowingClass>
+  { co_return CurrentThrowingClass{}; };
+  auto coro_2 = [&]() -> cf::task<int>
+  {
+    co_await coro();
+    co_return 2;
+  };
+
+  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
+                    TestException);
+}
+                    */
 #pragma endregion

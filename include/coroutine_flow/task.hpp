@@ -7,10 +7,12 @@
 #include <coroutine_flow/tag_invoke.hpp>
 
 #include <atomic>
+#include <cassert>
 #include <coroutine>
 #include <exception>
 #include <expected>
 #include <functional>
+#include <future>
 
 namespace coroutine_flow
 {
@@ -18,6 +20,38 @@ namespace coroutine_flow
 struct schedule_task_t
 {
 };
+
+namespace __details
+{
+  template <typename T>
+  struct result_as_promise_t
+  {
+      std::promise<T> result_promise;
+      coroutine_extension operator()(
+          std::expected<std::optional<T>, std::exception_ptr> result) noexcept
+      {
+        if (result.has_value())
+        {
+          assert(result->has_value());
+          if constexpr (std::movable<T>)
+          {
+            result_promise.set_value(std::move(**result));
+          }
+          else
+          {
+            result_promise.set_value(**result);
+          }
+        }
+        else
+        {
+          result_promise.set_exception(result.error());
+        }
+        co_return;
+      }
+
+      coroutine_extension operator()() noexcept { co_return; }
+  };
+} // namespace __details
 
 template <typename T>
 class task
@@ -50,7 +84,7 @@ class task
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    void run_async(scheduler_t scheduler) &&
+    task&& run_async(scheduler_t scheduler) &&
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
@@ -59,12 +93,17 @@ class task
         auto task_call = [p_handle = handle]() { p_handle(); };
         tag_invoke(schedule_task_t{}, p_scheduler, std::move(task_call));
       };
-
+      m_coro_handle.promise().execute_extension = true;
+      m_result_future =
+          m_coro_handle.promise().extension.result_promise.get_future();
       tag_invoke(schedule_task_t{},
                  scheduler,
                  [p_current_handle = m_coro_handle] { p_current_handle(); });
       m_coro_handle = {};
+      return std::move(*this);
     }
+
+    std::future<T> sync_wait() && { return std::move(m_result_future); }
 
   private:
     template <__details::coroutine_chain_holder other_promise_t>
@@ -108,6 +147,7 @@ class task
     }
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
+    std::future<T> m_result_future;
 };
 
 template <typename T>
@@ -117,6 +157,9 @@ struct task<T>::promise_t
 
     std::function<void(std::function<void()>)> schedule_callback;
     __details::coroutine_chain_t<task<T>::promise_t> coroutine_chain;
+
+    __details::result_as_promise_t<T> extension;
+    bool execute_extension{ false };
 
     ~promise_t() { CF_PROFILE_SCOPE(); }
 
@@ -143,10 +186,24 @@ struct task<T>::promise_t
       CF_PROFILE_SCOPE();
       return {};
     }
-    std::suspend_always final_suspend() noexcept
+    auto final_suspend() noexcept
     {
       CF_PROFILE_SCOPE();
-      return {};
+      if (execute_extension)
+      {
+        if constexpr (std::movable<T>)
+        {
+          return extension(std::move(result));
+        }
+        else
+        {
+          return extension(result);
+        }
+      }
+      else
+      {
+        return extension();
+      }
     }
 
     template <typename R>
@@ -199,17 +256,25 @@ struct task<T>::awaiter_t
     T await_resume()
     {
       CF_PROFILE_SCOPE();
-      if constexpr (std::movable<T>)
+      promise_t& promise = current_handle.promise();
+      if (promise.result.has_value())
       {
-        return std::move(**current_handle.promise().result);
+        if constexpr (std::movable<T>)
+        {
+          return std::move(current_handle.promise().result->value());
+        }
+        else
+        {
+          return current_handle.promise().result->value();
+        }
       }
       else
       {
-        return **current_handle.promise().result;
+        std::rethrow_exception(promise.result.error());
       }
     }
     template <__details::coroutine_chain_holder other_promise_type>
-    bool await_suspend(
+    static bool await_suspend(
         std::coroutine_handle<other_promise_type> suspended_handle)
     {
       CF_PROFILE_SCOPE();

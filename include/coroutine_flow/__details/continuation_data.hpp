@@ -16,6 +16,7 @@ concept continuable_promise = requires(T promise, continuation_data data) {
 struct continuation_data
 {
     std::coroutine_handle<> coro;
+    // TODO make it noexcept
     std::function<void(continuation_data)> set_next;
     std::function<continuation_data&()> get_next;
 
@@ -29,7 +30,7 @@ struct continuation_data
 
     template <continuable_promise other_promise_type>
     static continuation_data
-        create_data(std::coroutine_handle<other_promise_type> handler)
+        create_data(std::coroutine_handle<other_promise_type> handler) noexcept
     {
       continuation_data result;
       result.coro = handler;

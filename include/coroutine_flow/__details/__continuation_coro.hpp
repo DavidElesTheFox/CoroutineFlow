@@ -1,80 +1,83 @@
 #pragma once
 
+#include <coroutine_flow/__details/continuation_data.hpp>
+
 #include <coroutine>
 
 namespace coroutine_flow::__details
 {
-/*
-class __continuation_coro
+
+class coroutine_extension
 {
-protected:
-struct promise_t;
+  protected:
+    struct promise_t;
 
-public:
-using handle_t = std::coroutine_handle<promise_t>;
+  public:
+    using handle_t = std::coroutine_handle<promise_t>;
+    using promise_type = promise_t;
 
-protected:
-struct awaiter_t
-{
-    handle_t continuation_handle;
-    bool await_ready() { return false; }
-    void await_resume() {}
-
-    std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> suspended_handle)
+  protected:
+    struct awaiter_t
     {
-      if (continuation_handle != nullptr)
-      {
-        continuation_handle.promise().next = suspended_handle;
-        return continuation_handle;
-      }
-      else
-      {
-        return suspended_handle;
-      }
+        continuation_data handle;
+        bool await_ready() noexcept { return false; }
+        void await_resume() noexcept {}
+
+        template <continuable_promise other_promise_type>
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<other_promise_type> suspended_handle) noexcept
+        {
+          if (handle.is_empty() == false && handle.coro.done() == false)
+          {
+            auto suspended_data =
+                continuation_data::create_data(suspended_handle);
+            handle.set_next(suspended_data);
+            auto coro = handle.coro;
+            handle.clear();
+            return coro;
+          }
+          else if (suspended_handle.done() == false)
+          {
+            return suspended_handle;
+          }
+          else
+          {
+            return std::noop_coroutine();
+          }
+        }
+    };
+
+  public:
+    explicit coroutine_extension(handle_t handle)
+        : m_handle(std::move(handle))
+    {
     }
+
+    awaiter_t operator co_await() noexcept;
+
+  private:
+    handle_t m_handle;
 };
 
-public:
-explicit __continuation_coro(handle_t handle)
-    : m_handle(std::move(handle))
+struct coroutine_extension::promise_t
 {
+    continuation_data next;
+    coroutine_extension get_return_object()
+    {
+      return coroutine_extension(handle_t::from_promise(*this));
+    }
+
+    continuation_data& get_next() { return next; }
+    void set_next(continuation_data&& value) { next = value; }
+
+    std::suspend_always initial_suspend() { return {}; }
+    awaiter_t final_suspend() noexcept { return { next }; }
+    void return_void() {}
+    void unhandled_exception() { std::abort(); }
+};
+coroutine_extension::awaiter_t coroutine_extension::operator co_await() noexcept
+{
+  return { continuation_data::create_data(m_handle) };
 }
 
-awaiter_t operator co_await() { return { m_handle }; }
-
-private:
-handle_t m_handle;
-};
-
-struct __continuation_coro::promise_t
-{
-std::coroutine_handle<> next;
-__continuation_coro get_return_object()
-{
-  return __continuation_coro(handle_t::from_promise(*this));
-}
-
-std::suspend_always initial_suspend() { return {}; }
-awaiter_t final_suspend() { return { next }; }
-void return_void() {}
-};
-*/
-/*
-template<typename T>
-using my_task = cf::task_base<T, result_as_promise_t<T>>;
-
-concept continuation_definition
-template<typename T>
-struct result_as_promise_t
-{
-   std::promise<T> result;
-   __continuation_coro operator()(std::expected<T> result)
-   {
-      result.set_value...
-   }
-   T get() { result.feature().get();}
-};
-
-*/
 } // namespace coroutine_flow::__details

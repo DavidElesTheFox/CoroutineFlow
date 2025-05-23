@@ -82,7 +82,6 @@ class coroutine_chain_t
         {
           CF_ATTACH_NOTE("Finished");
           current = current.get_next();
-          CF_ATTACH_NOTE(next.coro.address());
         }
         else
         {
@@ -92,7 +91,7 @@ class coroutine_chain_t
     }
 
     template <coroutine_chain_holder other_promise_type>
-    void move_into(coroutine_chain_t<other_promise_type>& o)
+    void move_into(coroutine_chain_t<other_promise_type>& o) noexcept
     {
       CF_PROFILE_SCOPE();
 
@@ -107,7 +106,7 @@ class coroutine_chain_t
     }
 
     bool try_store_suspended_handle(
-        std::coroutine_handle<promise_type> suspended_handle)
+        std::coroutine_handle<promise_type> suspended_handle) noexcept
     {
       if (const bool finished_meanwhile =
               m_suspended_handle_barrier.test_and_set(
