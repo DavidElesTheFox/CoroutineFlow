@@ -1,7 +1,6 @@
 /*
  - when suspenned called after object destroyed. (functional)
  - nothrow coroutine
- - get function
 */
 #include <catch2/catch_test_macros.hpp>
 
@@ -89,6 +88,7 @@ struct ThrowingClass
       {
         throw TestException{};
       }
+      return *this;
     }
     ThrowingClass& operator=(ThrowingClass&&)
     {
@@ -96,6 +96,7 @@ struct ThrowingClass
       {
         throw TestException{};
       }
+      return *this;
     }
 };
 
@@ -117,6 +118,7 @@ struct NonMovableThrowingClass
       {
         throw TestException{};
       }
+      return *this;
     }
     NonMovableThrowingClass& operator=(NonMovableThrowingClass&&) = delete;
 };
@@ -1377,5 +1379,13 @@ TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
   REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
                     TestException);
 }
-                    */
+*/
 #pragma endregion
+
+TEST_CASE("Check get function", "[task]")
+{
+  SimpleThreadPool thread_pool;
+  auto coro = []() -> cf::task<int> { co_return 2; };
+  auto result = coro().run_async(&thread_pool).sync_wait().get();
+  REQUIRE(result == 2);
+}
