@@ -3,6 +3,7 @@
 #include <coroutine_flow/__details/continuation_data.hpp>
 
 #include <coroutine>
+#include <utility>
 
 namespace coroutine_flow::__details
 {
@@ -31,7 +32,7 @@ class coroutine_extension
           {
             auto suspended_data =
                 continuation_data::create_data(suspended_handle);
-            handle.set_next(suspended_data);
+            handle.set_next(std::move(suspended_data));
             auto coro = handle.coro;
             handle.clear();
             return coro;
@@ -68,10 +69,10 @@ struct coroutine_extension::promise_t
     }
 
     continuation_data& get_next() { return next; }
-    void set_next(continuation_data&& value) { next = value; }
+    void set_next(continuation_data&& value) { next = std::move(value); }
 
     std::suspend_always initial_suspend() { return {}; }
-    awaiter_t final_suspend() noexcept { return { next }; }
+    awaiter_t final_suspend() noexcept { return { std::exchange(next, {}) }; }
     void return_void() {}
     void unhandled_exception() { std::abort(); }
 };

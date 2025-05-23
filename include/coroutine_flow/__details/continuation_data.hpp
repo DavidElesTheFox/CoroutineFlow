@@ -16,9 +16,8 @@ concept continuable_promise = requires(T promise, continuation_data data) {
 struct continuation_data
 {
     std::coroutine_handle<> coro;
-    // TODO make it noexcept
-    std::function<void(continuation_data)> set_next;
-    std::function<continuation_data&()> get_next;
+    std::move_only_function<void(continuation_data) noexcept> set_next;
+    std::move_only_function<continuation_data&() noexcept> get_next;
 
     bool is_empty() const { return set_next == nullptr; }
     void clear()
@@ -34,12 +33,12 @@ struct continuation_data
     {
       continuation_data result;
       result.coro = handler;
-      result.set_next = [=](continuation_data continuation_data)
+      result.set_next = [=](continuation_data continuation_data) noexcept
       {
         other_promise_type& promise = handler.promise();
         promise.set_next(std::move(continuation_data));
       };
-      result.get_next = [=]() -> continuation_data&
+      result.get_next = [=]() noexcept -> continuation_data&
       {
         other_promise_type& promise = handler.promise();
         return promise.get_next();

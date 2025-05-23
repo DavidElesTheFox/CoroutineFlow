@@ -35,7 +35,7 @@ class coroutine_chain_t
     friend class coroutine_chain_t;
 
     continuation_data& get_next() { return m_next; }
-    void set_next(continuation_data value) { m_next = value; }
+    void set_next(continuation_data value) { m_next = std::move(value); }
 
     std::optional<std::coroutine_handle<promise_type>> reset_suspended_handle()
     {
@@ -69,7 +69,7 @@ class coroutine_chain_t
       {
         return;
       }
-      continuation_data current = m_next;
+      continuation_data current = std::exchange(m_next, {});
       while (current.is_empty() == false)
       {
         CF_PROFILE_ZONE(SetNext, "Continue next");
@@ -78,7 +78,7 @@ class coroutine_chain_t
         if (current.coro.done())
         {
           CF_ATTACH_NOTE("Finished");
-          current = current.get_next();
+          current = std::exchange(current.get_next(), {});
         }
         else
         {
@@ -98,8 +98,8 @@ class coroutine_chain_t
 
       auto suspended_data =
           continuation_data::create_data(*reset_suspended_handle());
-      suspended_data.set_next(m_next);
-      o.m_next = suspended_data;
+      suspended_data.set_next(std::exchange(m_next, {}));
+      o.m_next = std::move(suspended_data);
     }
 
     bool try_store_suspended_handle(
