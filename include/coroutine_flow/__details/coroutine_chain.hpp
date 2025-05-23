@@ -73,11 +73,8 @@ class coroutine_chain_t
       while (current.is_empty() == false)
       {
         CF_PROFILE_ZONE(SetNext, "Continue next");
-        // TODO: check this condition. When exception occurred resume was null
-        if (current.coro.done() == false)
-        {
-          current.coro();
-        }
+
+        current.coro();
         if (current.coro.done())
         {
           CF_ATTACH_NOTE("Finished");

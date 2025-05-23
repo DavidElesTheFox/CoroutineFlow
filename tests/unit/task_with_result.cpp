@@ -149,11 +149,7 @@ class SimpleThreadPool
             {
               return;
             }
-            std::cout << "[SimpleThreadPool::tag_invoke] thread start work "
-                      << std::this_thread::get_id() << std::endl;
             p_callback();
-            std::cout << "[SimpleThreadPool::tag_invoke] thread finished work "
-                      << std::this_thread::get_id() << std::endl;
           });
     }
     SimpleThreadPool() = default;
@@ -225,8 +221,6 @@ class Event
 
     void trigger()
     {
-      std::cout << "[Event::trigger] " << m_name << std::endl;
-
       if (std::exchange(m_once_triggered, true) == false)
       {
         m_triggered.set_value(true);
