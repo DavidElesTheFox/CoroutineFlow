@@ -1,6 +1,6 @@
 #pragma once
 
-#include <coroutine_flow/__details/__continuation_coro.hpp>
+#include <coroutine_flow/__details/continuation_coro.hpp>
 #include <coroutine_flow/__details/continuation_data.hpp>
 #include <coroutine_flow/__details/coroutine_chain.hpp>
 #include <coroutine_flow/profiler.hpp>
