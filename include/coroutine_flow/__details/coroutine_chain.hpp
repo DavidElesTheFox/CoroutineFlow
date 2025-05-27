@@ -60,23 +60,33 @@ class coroutine_chain_t
       {
         return;
       }
+      std::vector<std::coroutine_handle<>> handles_to_destroy;
+      handles_to_destroy.push_back(*suspended_handle);
       auto destroy_suspended_at_end =
-          scope_exit_t{ [&]() noexcept { suspended_handle->destroy(); } };
+          scope_exit_t{ [&]() noexcept
+                        {
+                          for (auto handle : handles_to_destroy)
+                          {
+                            handle.destroy();
+                          }
+                        } };
 
       continuation_data current = std::exchange(m_next, {});
       while (current.is_empty() == false)
       {
         CF_PROFILE_ZONE(SetNext, "Continue next");
+        CF_ATTACH_NOTE("coro: ", current.coro.address());
 
         current.coro();
         if (current.coro.done())
         {
-          CF_ATTACH_NOTE("Finished");
-          current.coro.destroy();
+          CF_ATTACH_NOTE("Is done");
+          handles_to_destroy.push_back(current.coro);
           current = std::exchange(current.get_next(), {});
         }
         else
         {
+          CF_ATTACH_NOTE("Is not done");
           break;
         }
       }

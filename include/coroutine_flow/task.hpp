@@ -20,7 +20,8 @@ namespace coroutine_flow
 struct schedule_task_t
 {
 };
-
+template <typename T>
+class task;
 namespace __details
 {
   template <typename T>
@@ -56,18 +57,222 @@ namespace __details
         co_return;
       }
   };
+
+  template <typename T>
+  struct task_promise_t
+  {
+      using handle_t = std::coroutine_handle<task_promise_t>;
+
+      std::expected<std::optional<T>, std::exception_ptr> result;
+      std::atomic_flag result_stored;
+      std::atomic_flag suspended_handle_resumed;
+
+      std::function<void(std::function<void()>)> schedule_callback;
+      __details::coroutine_chain_t<task_promise_t> coroutine_chain;
+
+      __details::result_as_promise_t<T> extension;
+      bool execute_extension{ false };
+
+      ~task_promise_t()
+      {
+        CF_PROFILE_SCOPE();
+        CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
+      }
+
+      __details::continuation_data& get_next()
+      {
+        return coroutine_chain.get_next();
+      }
+      void set_next(__details::continuation_data next)
+      {
+        coroutine_chain.set_next(std::move(next));
+      }
+
+      __details::coroutine_chain_t<task_promise_t>& get_coroutine_chain()
+      {
+        return coroutine_chain;
+      }
+      task<T> get_return_object()
+      {
+        CF_PROFILE_SCOPE();
+        return task<T>{ handle_t::from_promise(*this) };
+      }
+      std::suspend_always initial_suspend() noexcept
+      {
+        CF_PROFILE_SCOPE();
+        return {};
+      }
+      auto final_suspend() noexcept
+      {
+        CF_PROFILE_SCOPE();
+        if (execute_extension)
+        {
+          /*
+           No need for memory synchronization because return_value should be
+           written on the same thread where final_suspend
+          */
+          if constexpr (std::movable<T>)
+          {
+            return extension(std::move(result));
+          }
+          else
+          {
+            return extension(result);
+          }
+        }
+        else
+        {
+          return extension();
+        }
+      }
+
+      template <typename R>
+        requires std::is_move_constructible_v<std::remove_reference_t<R>> &&
+                 std::is_constructible_v<T, R&&>
+      void return_value(R&& val)
+      {
+        CF_PROFILE_SCOPE();
+        result = std::optional<T>(std::forward<R>(val));
+        result_stored.test_and_set(std::memory_order_release);
+        result_stored.notify_all();
+        CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
+      }
+      template <typename R>
+        requires std::is_copy_constructible_v<std::remove_reference_t<R>> &&
+                 std::is_constructible_v<T, const R&>
+      void return_value(const R& val)
+      {
+        CF_PROFILE_SCOPE();
+        result = std::optional<T>(val);
+        result_stored.test_and_set(std::memory_order_release);
+        result_stored.notify_all();
+        CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
+      }
+      template <typename R>
+        requires std::is_constructible_v<T, R*>
+      void return_value(R* val)
+      {
+        CF_PROFILE_SCOPE();
+        result = std::optional<T>(val);
+        result_stored.test_and_set(std::memory_order_release);
+        result_stored.notify_all();
+        CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
+      }
+      void unhandled_exception()
+      {
+        CF_PROFILE_SCOPE();
+
+        result = std::unexpected(std::current_exception());
+        result_stored.test_and_set(std::memory_order_release);
+        result_stored.notify_all();
+        CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
+      }
+      template <typename U>
+      auto await_transform(task<U> task);
+  };
+  template <typename T>
+  template <typename U>
+  auto task_promise_t<T>::await_transform(task<U> task)
+  {
+    CF_PROFILE_SCOPE();
+    return task.run_async(schedule_callback, this);
+  }
+  template <typename T, coroutine_chain_holder other_promise_type>
+  struct task_awaiter_t
+  {
+      using promise_t = task_promise_t<T>;
+      std::coroutine_handle<promise_t> current_handle;
+      std::coroutine_handle<other_promise_type> suspended_handle;
+      bool was_not_suspended = false;
+
+      bool await_ready()
+      {
+        CF_PROFILE_SCOPE();
+        if (current_handle.done())
+        {
+          CF_ATTACH_NOTE("async call is already finished");
+          const bool has_been_resumed =
+              suspended_handle.promise().suspended_handle_resumed.test_and_set(
+                  std::memory_order_acquire);
+          was_not_suspended = has_been_resumed == false;
+          CF_ATTACH_NOTE("Do we suspend now? ", was_not_suspended);
+
+          return was_not_suspended;
+        }
+        return false;
+      }
+      T await_resume()
+      {
+        CF_PROFILE_SCOPE();
+        CF_ATTACH_NOTE("caused async call a suspend? ", was_not_suspended);
+        CF_ATTACH_NOTE("Async task: ", current_handle.address());
+        suspended_handle.promise().suspended_handle_resumed.clear();
+
+        promise_t& promise = current_handle.promise();
+        promise.result_stored.wait(false, std::memory_order_acquire);
+        auto result = std::move(promise.result);
+        if (was_not_suspended)
+        {
+          current_handle.destroy();
+        }
+        if (result.has_value())
+        {
+          if constexpr (std::movable<T>)
+          {
+            return std::move(result->value());
+          }
+          else
+          {
+            return result->value();
+          }
+        }
+        else
+        {
+          std::rethrow_exception(result.error());
+        }
+      }
+      bool await_suspend(
+          std::coroutine_handle<other_promise_type> suspended_handle)
+      {
+        CF_PROFILE_SCOPE();
+        if (current_handle.done())
+        {
+          CF_ATTACH_NOTE("Async call is finished");
+          const bool has_been_resumed =
+              suspended_handle.promise().suspended_handle_resumed.test_and_set(
+                  std::memory_order_acquire);
+          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
+
+          if (has_been_resumed == false)
+          {
+            return false;
+          }
+        }
+        assert(suspended_handle.address() == this->suspended_handle.address());
+
+        other_promise_type& promise = suspended_handle.promise();
+        CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
+        promise.get_coroutine_chain().store_suspended_handle(suspended_handle);
+        return true;
+      }
+  };
+
 } // namespace __details
 
 template <typename T>
 class task
 {
   protected:
-    struct awaiter_t;
-    struct promise_t;
+    template <__details::coroutine_chain_holder other_promise_type>
+    using awaiter_t = __details::task_awaiter_t<T, other_promise_type>;
+
+    using promise_t = __details::task_promise_t<T>;
     using handle_t = std::coroutine_handle<promise_t>;
 
     template <typename R>
-    friend struct task<R>::promise_t;
+    friend struct __details::task_promise_t;
+
+    friend struct __details::task_promise_t<T>;
 
   public:
     using promise_type = promise_t;
@@ -119,203 +324,67 @@ class task
 
   private:
     template <__details::coroutine_chain_holder other_promise_t>
-    awaiter_t
+    awaiter_t<other_promise_t>
         run_async(std::function<void(std::function<void()>)> schedule_callback,
-                  other_promise_t* suspended_promise)
-    {
-      CF_PROFILE_SCOPE();
+                  other_promise_t* suspended_promise);
 
-      get_promise().schedule_callback = schedule_callback;
-      schedule_callback(
-          [p_coro_handle = m_coro_handle,
-           p_this_ptr = this,
-           p_suspended_promise = suspended_promise]() mutable
-          {
-            CF_PROFILE_SCOPE_N("Task::AsyncRun");
-            CF_ATTACH_NOTE("Executed handle", p_coro_handle.address());
-            CF_ATTACH_NOTE("Context's handle",
-                           std::coroutine_handle<other_promise_t>::from_promise(
-                               *p_suspended_promise)
-                               .address());
-
-            p_coro_handle();
-
-            if (p_coro_handle.done())
-            {
-              CF_PROFILE_ZONE(HandleDone, "Handle Done");
-
-              auto destroy_coro_at_end =
-                  __details::scope_exit_t{ [&]() noexcept
-                                           { p_coro_handle.destroy(); } };
-
-              p_suspended_promise->get_coroutine_chain()
-                  .continue_suspended_handle();
-            }
-            else
-            {
-              p_suspended_promise->get_coroutine_chain().move_into(
-                  p_coro_handle.promise().get_coroutine_chain());
-            }
-          });
-      awaiter_t result;
-      result.current_handle = std::exchange(m_coro_handle, {});
-      return result;
-    }
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
     std::future<T> m_result_future;
 };
 
 template <typename T>
-struct task<T>::promise_t
+template <__details::coroutine_chain_holder other_promise_t>
+task<T>::awaiter_t<other_promise_t> task<T>::run_async(
+    std::function<void(std::function<void()>)> schedule_callback,
+    other_promise_t* suspended_promise)
 {
-    std::expected<std::optional<T>, std::exception_ptr> result;
-    std::atomic_flag result_stored;
+  CF_PROFILE_SCOPE();
 
-    std::function<void(std::function<void()>)> schedule_callback;
-    __details::coroutine_chain_t<task<T>::promise_t> coroutine_chain;
-
-    __details::result_as_promise_t<T> extension;
-    bool execute_extension{ false };
-
-    ~promise_t()
-    {
-      CF_PROFILE_SCOPE();
-      CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
-    }
-
-    __details::continuation_data& get_next()
-    {
-      return coroutine_chain.get_next();
-    }
-    void set_next(__details::continuation_data next)
-    {
-      coroutine_chain.set_next(std::move(next));
-    }
-
-    __details::coroutine_chain_t<task<T>::promise_t>& get_coroutine_chain()
-    {
-      return coroutine_chain;
-    }
-    task<T> get_return_object()
-    {
-      CF_PROFILE_SCOPE();
-      return task<T>{ handle_t::from_promise(*this) };
-    }
-    std::suspend_always initial_suspend() noexcept
-    {
-      CF_PROFILE_SCOPE();
-      return {};
-    }
-    auto final_suspend() noexcept
-    {
-      CF_PROFILE_SCOPE();
-      if (execute_extension)
+  get_promise().schedule_callback = schedule_callback;
+  schedule_callback(
+      [p_coro_handle = m_coro_handle,
+       p_this_ptr = this,
+       p_suspended_promise = suspended_promise]() mutable
       {
-        /*
-         No need for memory synchronization because return_value should be
-         written on the same thread where final_suspend
-        */
-        if constexpr (std::movable<T>)
+        CF_PROFILE_SCOPE_N("Task::AsyncRun");
+        CF_ATTACH_NOTE("Executed handle", p_coro_handle.address());
+        CF_ATTACH_NOTE("Context's handle",
+                       std::coroutine_handle<other_promise_t>::from_promise(
+                           *p_suspended_promise)
+                           .address());
+
+        p_coro_handle();
+        const bool suspended_is_not_suspended =
+            p_suspended_promise->suspended_handle_resumed.test_and_set(
+                std::memory_order_acquire);
+        if (suspended_is_not_suspended)
         {
-          return extension(std::move(result));
+          CF_ATTACH_NOTE("suspended handle were not really suspended.");
+          return;
+        }
+        if (p_coro_handle.done())
+        {
+          CF_PROFILE_ZONE(HandleDone, "Handle Done");
+
+          auto destroy_coro_at_end =
+              __details::scope_exit_t{ [&]() noexcept
+                                       { p_coro_handle.destroy(); } };
+
+          p_suspended_promise->get_coroutine_chain()
+              .continue_suspended_handle();
         }
         else
         {
-          return extension(result);
+          p_suspended_promise->get_coroutine_chain().move_into(
+              p_coro_handle.promise().get_coroutine_chain());
         }
-      }
-      else
-      {
-        return extension();
-      }
-    }
+      });
+  awaiter_t<other_promise_t> result;
+  result.current_handle = std::exchange(m_coro_handle, {});
+  result.suspended_handle =
+      std::coroutine_handle<other_promise_t>::from_promise(*suspended_promise);
+  return result;
+}
 
-    template <typename R>
-      requires std::is_move_constructible_v<std::remove_reference_t<R>> &&
-               std::is_constructible_v<T, R&&>
-    void return_value(R&& val)
-    {
-      CF_PROFILE_SCOPE();
-      result = std::optional<T>(std::forward<R>(val));
-      result_stored.test_and_set(std::memory_order_release);
-      result_stored.notify_all();
-    }
-    template <typename R>
-      requires std::is_copy_constructible_v<std::remove_reference_t<R>> &&
-               std::is_constructible_v<T, const R&>
-    void return_value(const R& val)
-    {
-      CF_PROFILE_SCOPE();
-      result = std::optional<T>(val);
-      result_stored.notify_all();
-      result_stored.test_and_set(std::memory_order_release);
-    }
-    template <typename R>
-      requires std::is_constructible_v<T, R*>
-    void return_value(R* val)
-    {
-      CF_PROFILE_SCOPE();
-      result = std::optional<T>(val);
-      result_stored.test_and_set(std::memory_order_release);
-      result_stored.notify_all();
-    }
-    void unhandled_exception()
-    {
-      CF_PROFILE_SCOPE();
-
-      result = std::unexpected(std::current_exception());
-      result_stored.test_and_set(std::memory_order_release);
-      result_stored.notify_all();
-    }
-    template <typename U>
-    auto await_transform(task<U> task)
-    {
-      CF_PROFILE_SCOPE();
-      return task.run_async(schedule_callback, this);
-    }
-};
-
-template <typename T>
-struct task<T>::awaiter_t
-{
-    std::coroutine_handle<promise_t> current_handle;
-
-    static bool await_ready()
-    {
-      CF_PROFILE_SCOPE();
-      return false;
-    }
-    T await_resume()
-    {
-      CF_PROFILE_SCOPE();
-      promise_t& promise = current_handle.promise();
-      promise.result_stored.wait(false, std::memory_order_acquire);
-      if (promise.result.has_value())
-      {
-        if constexpr (std::movable<T>)
-        {
-          return std::move(current_handle.promise().result->value());
-        }
-        else
-        {
-          return current_handle.promise().result->value();
-        }
-      }
-      else
-      {
-        std::rethrow_exception(promise.result.error());
-      }
-    }
-    template <__details::coroutine_chain_holder other_promise_type>
-    static void await_suspend(
-        std::coroutine_handle<other_promise_type> suspended_handle)
-    {
-      CF_PROFILE_SCOPE();
-
-      other_promise_type& promise = suspended_handle.promise();
-      CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
-      promise.get_coroutine_chain().store_suspended_handle(suspended_handle);
-    }
-};
 } // namespace coroutine_flow
