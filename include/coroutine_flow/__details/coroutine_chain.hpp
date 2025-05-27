@@ -1,5 +1,6 @@
 #pragma once
 
+#include <coroutine_flow/__details/scope_exit.hpp>
 #include <coroutine_flow/profiler.hpp>
 
 #include <atomic>
@@ -59,6 +60,9 @@ class coroutine_chain_t
       {
         return;
       }
+      auto destroy_suspended_at_end =
+          scope_exit_t{ [&]() noexcept { suspended_handle->destroy(); } };
+
       continuation_data current = std::exchange(m_next, {});
       while (current.is_empty() == false)
       {
@@ -68,6 +72,7 @@ class coroutine_chain_t
         if (current.coro.done())
         {
           CF_ATTACH_NOTE("Finished");
+          current.coro.destroy();
           current = std::exchange(current.get_next(), {});
         }
         else

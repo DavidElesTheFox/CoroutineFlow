@@ -1,14 +1,16 @@
 #pragma once
 
 #include <coroutine_flow/__details/continuation_data.hpp>
+#include <coroutine_flow/profiler.hpp>
 
+#include <cassert>
 #include <coroutine>
 #include <utility>
 
 namespace coroutine_flow::__details
 {
 
-class coroutine_extension
+class final_coroutine_t
 {
   protected:
     struct promise_t;
@@ -22,34 +24,51 @@ class coroutine_extension
     {
         continuation_data handle;
         bool await_ready() noexcept { return false; }
+
         void await_resume() noexcept {}
 
         template <continuable_promise other_promise_type>
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<other_promise_type> suspended_handle) noexcept
         {
-          if (handle.is_empty() == false && handle.coro.done() == false)
+          CF_PROFILE_SCOPE();
+          // Handle can be empty when basically it is a null extension.
+          if (handle.is_empty() == false)
           {
+            CF_PROFILE_SCOPE_N("handle not empty");
+            assert(handle.coro.done() == false &&
+                   "The final coroutine shouldn't be done already.");
+            assert(
+                suspended_handle.done() &&
+                "The final handle will not continue the suspended handle. Thus "
+                "we expect that it is already finished, but not destroyed.");
+
+            CF_ATTACH_NOTE("suspended_handle: ", suspended_handle.address());
+            CF_ATTACH_NOTE("handle: ", handle.coro.address());
+            /*
+            Do not store continuation here. This is a final coroutine. It
+            means that the suspended handle won't be continued by this
+            coroutine.
+
             auto suspended_data =
                 continuation_data::create_data(suspended_handle);
             handle.set_next(std::move(suspended_data));
+            */
             auto coro = handle.coro;
             handle.clear();
             return coro;
           }
-          else if (suspended_handle.done() == false)
-          {
-            return suspended_handle;
-          }
           else
           {
+            CF_PROFILE_SCOPE_N("NOOP");
+
             return std::noop_coroutine();
           }
         }
     };
 
   public:
-    explicit coroutine_extension(handle_t handle)
+    explicit final_coroutine_t(handle_t handle)
         : m_handle(std::move(handle))
     {
     }
@@ -60,12 +79,12 @@ class coroutine_extension
     handle_t m_handle;
 };
 
-struct coroutine_extension::promise_t
+struct final_coroutine_t::promise_t
 {
     continuation_data next;
-    coroutine_extension get_return_object()
+    final_coroutine_t get_return_object()
     {
-      return coroutine_extension(handle_t::from_promise(*this));
+      return final_coroutine_t(handle_t::from_promise(*this));
     }
 
     continuation_data& get_next() { return next; }
@@ -76,7 +95,7 @@ struct coroutine_extension::promise_t
     void return_void() {}
     void unhandled_exception() { std::abort(); }
 };
-coroutine_extension::awaiter_t coroutine_extension::operator co_await() noexcept
+final_coroutine_t::awaiter_t final_coroutine_t::operator co_await() noexcept
 {
   return { continuation_data::create_data(m_handle) };
 }

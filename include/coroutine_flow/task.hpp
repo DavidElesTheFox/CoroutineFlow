@@ -27,9 +27,10 @@ namespace __details
   struct result_as_promise_t
   {
       std::promise<T> result_promise;
-      coroutine_extension operator()(
+      final_coroutine_t operator()(
           std::expected<std::optional<T>, std::exception_ptr> result) noexcept
       {
+        CF_PROFILE_SCOPE();
         if (result.has_value())
         {
           assert(result->has_value());
@@ -49,7 +50,11 @@ namespace __details
         co_return;
       }
 
-      coroutine_extension operator()() noexcept { co_return; }
+      final_coroutine_t operator()() noexcept
+      {
+        CF_PROFILE_SCOPE();
+        co_return;
+      }
   };
 } // namespace __details
 
@@ -84,7 +89,7 @@ class task
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    task&& run_async(scheduler_t scheduler) &&
+    void run_async(scheduler_t scheduler) &&
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
@@ -100,10 +105,17 @@ class task
                  scheduler,
                  [p_current_handle = m_coro_handle] { p_current_handle(); });
       m_coro_handle = {};
-      return std::move(*this);
     }
+    template <typename scheduler_t>
+      requires(
+          std::copyable<scheduler_t> &&
+          is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
+    T sync_wait(scheduler_t scheduler) &&
+    {
+      std::move(*this).run_async(scheduler);
 
-    std::future<T> sync_wait() && { return std::move(m_result_future); }
+      return m_result_future.get();
+    }
 
   private:
     template <__details::coroutine_chain_holder other_promise_t>
@@ -131,6 +143,10 @@ class task
             if (p_coro_handle.done())
             {
               CF_PROFILE_ZONE(HandleDone, "Handle Done");
+
+              auto destroy_coro_at_end =
+                  __details::scope_exit_t{ [&]() noexcept
+                                           { p_coro_handle.destroy(); } };
 
               p_suspended_promise->get_coroutine_chain()
                   .continue_suspended_handle();
@@ -162,7 +178,11 @@ struct task<T>::promise_t
     __details::result_as_promise_t<T> extension;
     bool execute_extension{ false };
 
-    ~promise_t() { CF_PROFILE_SCOPE(); }
+    ~promise_t()
+    {
+      CF_PROFILE_SCOPE();
+      CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
+    }
 
     __details::continuation_data& get_next()
     {

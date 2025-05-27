@@ -244,6 +244,23 @@ TEST_CASE("Check Destructor when not scheduled", "[task]")
   REQUIRE(coroutine_state_destroyed);
 }
 
+TEST_CASE("Check Destructor when scheduled", "[task]")
+{
+  CF_PROFILE_SCOPE();
+  bool coroutine_state_destroyed = false;
+  {
+    CF_PROFILE_SCOPE_N("coro owner_scope");
+    SimpleThreadPool thread_pool;
+    auto coro = [](OnExit&& checker) -> cf::task<int>
+    {
+      CF_PROFILE_SCOPE_N("coro");
+      co_return 2;
+    };
+    coro({ [&] { coroutine_state_destroyed = true; } }).run_async(&thread_pool);
+  }
+  REQUIRE(coroutine_state_destroyed);
+}
+
 #pragma region Execution Tests
 
 TEST_CASE("Neasted coroutine level 1", "[task]")
@@ -291,7 +308,7 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
     co_return 2;
   };
 
-  coro_2().run_async(&thread_pool).sync_wait().get();
+  coro_2().run_async(&thread_pool);
 
   REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -1082,8 +1099,7 @@ TEST_CASE("Coroutine with exception", "[task]")
     co_return 2;
   };
 
-  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
 }
 
 TEST_CASE("Coroutine with exception 2nd level", "[task]")
@@ -1113,8 +1129,7 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
 }
 
@@ -1161,8 +1176,7 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_3().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), TestException);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   REQUIRE(exception_forwarded_2_token.is_triggered(c_test_case_timeout));
 }
@@ -1183,8 +1197,7 @@ TEST_CASE("Coroutine with exception after co_await", "[task]")
     co_return result;
   };
 
-  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
 }
 
 TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
@@ -1231,8 +1244,7 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_3().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), TestException);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
 }
 
@@ -1243,8 +1255,7 @@ TEST_CASE("Exception during schedule", "[task]")
 
   auto coro = []() -> cf::task<int> { co_return 2; };
 
-  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
 }
 
 TEST_CASE("Exception during schedule inside coroutine", "[task]")
@@ -1259,8 +1270,7 @@ TEST_CASE("Exception during schedule inside coroutine", "[task]")
     co_return result + 1;
   };
 
-  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
 }
 
 TEST_CASE("Exception during move", "[task]")
@@ -1272,8 +1282,7 @@ TEST_CASE("Exception during move", "[task]")
   auto coro = []() -> cf::task<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
 
-  REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
 }
 TEST_CASE("Exception during move 2nd level", "[task]")
 {
@@ -1289,8 +1298,7 @@ TEST_CASE("Exception during move 2nd level", "[task]")
     co_return 2;
   };
 
-  REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
 }
 TEST_CASE("No Exception during move assign", "[task]")
 {
@@ -1301,7 +1309,7 @@ TEST_CASE("No Exception during move assign", "[task]")
   auto coro = []() -> cf::task<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
 
-  coro().run_async(&thread_pool).sync_wait().get();
+  coro().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
 }
 
@@ -1319,7 +1327,7 @@ TEST_CASE("No Exception during move assign 2nd level", "[task]")
     co_return 2;
   };
 
-  coro_2().run_async(&thread_pool).sync_wait().get();
+  coro_2().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
 }
 TEST_CASE("No Exception during movable class during copy", "[task]")
@@ -1331,7 +1339,7 @@ TEST_CASE("No Exception during movable class during copy", "[task]")
   auto coro = []() -> cf::task<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
 
-  coro().run_async(&thread_pool).sync_wait().get();
+  coro().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
 }
 
@@ -1349,7 +1357,7 @@ TEST_CASE("No Exception during movable class during copy 2nd level", "[task]")
     co_return 2;
   };
 
-  coro_2().run_async(&thread_pool).sync_wait().get();
+  coro_2().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
 }
 /* Future doesn't supports non movable class
@@ -1389,6 +1397,6 @@ TEST_CASE("Check get function", "[task]")
 {
   SimpleThreadPool thread_pool;
   auto coro = []() -> cf::task<int> { co_return 2; };
-  auto result = coro().run_async(&thread_pool).sync_wait().get();
+  auto result = coro().sync_wait(&thread_pool);
   REQUIRE(result == 2);
 }
