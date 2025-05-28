@@ -50,8 +50,16 @@ add_testcase(
 )
 
 
+
 add_testcase(
     TEST_NAME functional.tag_invoke
     SOURCES functional/tag_invoke.cpp
 )
-
+add_testcase(
+    TEST_NAME functional.task_with_result
+    SOURCES functional/task_with_result.cpp
+)
+add_testcase(
+    TEST_NAME functional.execution_flow_controller
+    SOURCES functional/execution_flow_controller.cpp
+)

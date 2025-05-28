@@ -1,6 +1,6 @@
 /*
- - when suspenned called after object destroyed. (functional)
- - nothrow coroutine
+
+ - Memory tests
 */
 #include <catch2/catch_test_macros.hpp>
 
