@@ -2,9 +2,9 @@
 
 #include <stdexcept>
 
-struct TestException : std::runtime_error
+struct test_exception_t : std::runtime_error
 {
-    TestException()
+    test_exception_t()
         : std::runtime_error("This exception is a test exception.")
     {
     }

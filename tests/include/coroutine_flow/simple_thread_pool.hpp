@@ -19,7 +19,7 @@ class simple_thread_pool
       {
         if (limit <= pool->m_current_schedule_count)
         {
-          throw TestException();
+          throw test_exception_t();
         }
         return limit;
       };

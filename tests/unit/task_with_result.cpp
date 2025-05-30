@@ -67,21 +67,21 @@ struct ThrowingClass
     {
       if constexpr (throw_at_copy_constructor)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
     }
     ThrowingClass(ThrowingClass&&)
     {
       if constexpr (throw_at_move_constructor)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
     }
     ThrowingClass& operator=(const ThrowingClass&)
     {
       if constexpr (throw_at_copy_assign)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
       return *this;
     }
@@ -89,7 +89,7 @@ struct ThrowingClass
     {
       if constexpr (throw_at_move_assign)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
       return *this;
     }
@@ -103,7 +103,7 @@ struct NonMovableThrowingClass
     {
       if constexpr (throw_at_copy_constructor)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
     }
     NonMovableThrowingClass(NonMovableThrowingClass&&) = delete;
@@ -111,7 +111,7 @@ struct NonMovableThrowingClass
     {
       if constexpr (throw_at_copy_assign)
       {
-        throw TestException{};
+        throw test_exception_t{};
       }
       return *this;
     }
@@ -1075,11 +1075,11 @@ TEST_CASE("Coroutine with exception", "[task]")
   simple_thread_pool thread_pool;
   auto coro = []() -> cf::task<int>
   {
-    throw TestException{};
+    throw test_exception_t{};
     co_return 2;
   };
 
-  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 
@@ -1091,7 +1091,7 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
 
   auto coro = []() -> cf::task<int>
   {
-    throw TestException{};
+    throw test_exception_t{};
     co_return 2;
   };
 
@@ -1102,7 +1102,7 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
       int result = co_await coro();
       co_return result + 1;
     }
-    catch (const TestException& e)
+    catch (const test_exception_t& e)
     {
       exception_forwarded_event.trigger();
       throw e;
@@ -1110,7 +1110,7 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
 }
@@ -1124,7 +1124,7 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
       Event::create("Exception forwarded 2");
   auto coro = []() -> cf::task<int>
   {
-    throw TestException{};
+    throw test_exception_t{};
     co_return 2;
   };
 
@@ -1135,7 +1135,7 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
       int result = co_await coro();
       co_return result + 1;
     }
-    catch (const TestException& e)
+    catch (const test_exception_t& e)
     {
       exception_forwarded_event.trigger();
       throw e;
@@ -1150,7 +1150,7 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
       int result = co_await coro_2();
       co_return result + 1;
     }
-    catch (const TestException& e)
+    catch (const test_exception_t& e)
     {
       exception_forwarded_2_event.trigger();
       throw e;
@@ -1158,7 +1158,7 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), test_exception_t);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   REQUIRE(exception_forwarded_2_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
@@ -1175,12 +1175,12 @@ TEST_CASE("Coroutine with exception after co_await", "[task]")
   auto coro_2 = [&]() mutable -> cf::task<int>
   {
     int result = co_await coro();
-    throw TestException{};
+    throw test_exception_t{};
 
     co_return result;
   };
 
-  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 
@@ -1203,7 +1203,7 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
     int result = co_await coro();
     CF_PROFILE_MARK("coro_2_2");
 
-    throw TestException{};
+    throw test_exception_t{};
 
     co_return result;
   };
@@ -1218,7 +1218,7 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
 
       co_return result + 1;
     }
-    catch (const TestException& e)
+    catch (const test_exception_t& e)
     {
       CF_PROFILE_MARK("coro_3_2");
 
@@ -1228,7 +1228,7 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
     co_return -1;
   };
 
-  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), test_exception_t);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
 }
@@ -1240,7 +1240,7 @@ TEST_CASE("Exception during schedule", "[task]")
 
   auto coro = []() -> cf::task<int> { co_return 2; };
 
-  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 
@@ -1256,7 +1256,7 @@ TEST_CASE("Exception during schedule inside coroutine", "[task]")
     co_return result + 1;
   };
 
-  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 
@@ -1269,7 +1269,7 @@ TEST_CASE("Exception during move", "[task]")
   auto coro = []() -> cf::task<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
 
-  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 TEST_CASE("Exception during move 2nd level", "[task]")
@@ -1286,7 +1286,7 @@ TEST_CASE("Exception during move 2nd level", "[task]")
     co_return 2;
   };
 
-  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), TestException);
+  REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
 }
 TEST_CASE("No Exception during move assign", "[task]")
@@ -1364,7 +1364,7 @@ TEST_CASE("Exception during copy in nonmovable class", "[task]")
   { co_return CurrentThrowingClass{}; };
 
   REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().h(),
-                    TestException);
+                    test_exception_t);
 }
 TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
 {
@@ -1381,7 +1381,7 @@ TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
   };
 
   REQUIRE_THROWS_AS(coro_2().run_async(&thread_pool).sync_wait().get(),
-                    TestException);
+                    test_exception_t);
 }
 */
 #pragma endregion
