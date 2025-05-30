@@ -3,6 +3,7 @@
 #include <coroutine_flow/__details/continuation_coro.hpp>
 #include <coroutine_flow/__details/continuation_data.hpp>
 #include <coroutine_flow/__details/coroutine_chain.hpp>
+#include <coroutine_flow/__details/testing/test_injection.hpp>
 #include <coroutine_flow/profiler.hpp>
 #include <coroutine_flow/tag_invoke.hpp>
 
@@ -31,7 +32,7 @@ namespace __details
       final_coroutine_t operator()(
           std::expected<std::optional<T>, std::exception_ptr> result) noexcept
       {
-        CF_PROFILE_SCOPE();
+        CF_PROFILE_SCOPE_N("result_as_promise");
         if (result.has_value())
         {
           assert(result->has_value());
@@ -188,14 +189,26 @@ namespace __details
       bool await_ready()
       {
         CF_PROFILE_SCOPE();
+        TEST_INJECTION(__details::testing::test_injection_points_t::
+                           task__await_ready__begin,
+                       suspended_handle.address());
+
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("async call is already finished");
+          TEST_INJECTION(__details::testing::test_injection_points_t::
+                             task__await_ready__before_test_and_set,
+                         suspended_handle.address());
+
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acquire);
           was_not_suspended = has_been_resumed == false;
+
           CF_ATTACH_NOTE("Do we suspend now? ", was_not_suspended);
+          TEST_INJECTION(__details::testing::test_injection_points_t::
+                             task__await_ready__after_test_and_set,
+                         suspended_handle.address());
 
           return was_not_suspended;
         }
@@ -206,7 +219,6 @@ namespace __details
         CF_PROFILE_SCOPE();
         CF_ATTACH_NOTE("caused async call a suspend? ", was_not_suspended);
         CF_ATTACH_NOTE("Async task: ", current_handle.address());
-        suspended_handle.promise().suspended_handle_resumed.clear();
 
         promise_t& promise = current_handle.promise();
         promise.result_stored.wait(false, std::memory_order_acquire);
@@ -280,7 +292,12 @@ class task
         : m_coro_handle(std::move(coro_handle))
     {
       CF_PROFILE_SCOPE();
+      TEST_INJECTION(
+          __details::testing::test_injection_points_t::task__constructor,
+          coro_handle.address());
     }
+
+    void* address() { return m_coro_handle.address(); }
 
     ~task()
     {
@@ -342,6 +359,7 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
   CF_PROFILE_SCOPE();
 
   get_promise().schedule_callback = schedule_callback;
+  suspended_promise->suspended_handle_resumed.clear();
   schedule_callback(
       [p_coro_handle = m_coro_handle,
        p_this_ptr = this,
@@ -355,6 +373,14 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
                            .address());
 
         p_coro_handle();
+        TEST_INJECTION(__details::testing::test_injection_points_t::
+                           task__run_async__async_call_finished,
+                       p_coro_handle.address());
+        TEST_INJECTION(__details::testing::test_injection_points_t::
+                           task__run_async__before_test_and_set,
+                       std::coroutine_handle<other_promise_t>::from_promise(
+                           *p_suspended_promise)
+                           .address());
         const bool suspended_is_not_suspended =
             p_suspended_promise->suspended_handle_resumed.test_and_set(
                 std::memory_order_acquire);

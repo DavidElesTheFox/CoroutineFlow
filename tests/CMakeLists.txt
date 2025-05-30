@@ -21,6 +21,10 @@ target_link_libraries(${arg_TEST_NAME}
         coroutine_flow::coroutine_flow
         Catch2::Catch2WithMain
 )
+target_include_directories(${arg_TEST_NAME}
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 target_link_options(${arg_TEST_NAME}
     PUBLIC
        ${CF_LINK_OPTIONS}

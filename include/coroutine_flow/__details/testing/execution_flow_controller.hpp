@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
@@ -16,12 +17,6 @@ template <typename enum_t>
 class execution_flow_controller
 {
   public:
-    // WARNING do not use this in shared object
-    static execution_flow_controller& instance()
-    {
-      static execution_flow_controller m_instance;
-      return m_instance;
-    }
     class thread_safety_token_t
     {
       public:
@@ -39,11 +34,36 @@ class execution_flow_controller
         }
         std::unique_lock<std::mutex> m_lock;
     };
+    class object_id_t
+    {
+      public:
+        explicit(false) object_id_t(void* object)
+            : m_value(object)
+        {
+        }
+        explicit(false) object_id_t(std::shared_future<void*> placeholder)
+            : m_future_value(std::move(placeholder))
+        {
+        }
+
+        operator void*()
+        {
+          if (m_future_value.valid())
+          {
+            m_value = m_future_value.get();
+          }
+          return m_value;
+        }
+
+      private:
+        void* m_value{ nullptr };
+        std::shared_future<void*> m_future_value;
+    };
     struct event_t
     {
         std::string name;
         enum_t point;
-        void* object;
+        object_id_t object;
         std::function<void(thread_safety_token_t)> callback;
     };
 
@@ -78,7 +98,7 @@ class execution_flow_controller
     }
 
     execution_flow_controller&
-        append(event_t& event, const thread_safety_token_t& safety_token = {})
+        append(event_t event, const thread_safety_token_t& safety_token = {})
     {
       append({ event }, safety_token);
       return *this;
@@ -112,8 +132,8 @@ class execution_flow_controller
         {
           return false;
         }
-        auto comperator = [&](const event_t& event)
-        { return event.object == object && event.point == point; };
+        auto comperator = [&](event_t& event)
+        { return event.point == point && event.object == object; };
 
         if (comperator(m_event_flow.front()))
         {

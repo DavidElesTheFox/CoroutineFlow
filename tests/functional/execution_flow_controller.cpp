@@ -20,7 +20,8 @@ using execution_flow_controller =
     cf::__details::testing::execution_flow_controller<test_points>;
 execution_flow_controller& get_controller()
 {
-  return execution_flow_controller::instance();
+  static execution_flow_controller instance;
+  return instance;
 }
 
 struct Foo
@@ -76,8 +77,8 @@ SCENARIO("Foo waits Bar", "[execution_flow_controller]")
       CF_PROFILE_SCOPE_N("Foo needs to wait until Bar finishes");
 
       get_controller().append(
-          { { "bar called", test_points::bar_after_do_something, &bar },
-            { "foo called", test_points::foo_before_do_something, &foo } });
+          { { "bar called", test_points::bar_after_do_something, { &bar } },
+            { "foo called", test_points::foo_before_do_something, { &foo } } });
 
       THEN("We expect the proper execution order")
       {

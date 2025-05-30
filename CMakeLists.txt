@@ -48,6 +48,9 @@ if(CF_USE_TRACY)
             Tracy::TracyClient
     )
 endif()
+if(CF_BUILD_TESTS)
+    set(CF_ENABLE_INJECTIONS TRUE CACHE STRING "Enable injection points")
+endif()
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/lib_config.hpp.in

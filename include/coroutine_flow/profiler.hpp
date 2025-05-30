@@ -3,7 +3,9 @@
 #include <coroutine_flow/lib_config.hpp>
 
 #if CF_USE_TRACY
+#include <source_location>
 #include <sstream>
+
 #include <tracy/Tracy.hpp>
 
 template <typename... Args>
@@ -14,7 +16,8 @@ inline std::string format_profile_notes(Args&&... args)
   return os.str();
 }
 
-#define CF_PROFILE_SCOPE() ZoneScoped
+#define CF_PROFILE_SCOPE()                                                     \
+  ZoneScopedN(std::source_location::current().function_name())
 #define CF_PROFILE_SCOPE_N(name) ZoneScopedN(name)
 #define CF_PROFILE_ZONE(varname, name) ZoneNamedN(varname, name, true)
 #define CF_PROFILE_MARK(name)                                                  \

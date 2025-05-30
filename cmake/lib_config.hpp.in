@@ -1,3 +1,4 @@
 #pragma once
 
 #cmakedefine01 CF_USE_TRACY
+#cmakedefine01 CF_ENABLE_INJECTIONS
