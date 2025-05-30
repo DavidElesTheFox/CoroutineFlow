@@ -117,7 +117,7 @@ SCENARIO("smart await")
                                coro_A_address_future });
       THEN("During execute everything should be called")
       {
-        SimpleThreadPool thread_pool;
+        simple_thread_pool thread_pool;
         coro_A().sync_wait(&thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
