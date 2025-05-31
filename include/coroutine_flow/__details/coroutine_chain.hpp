@@ -27,7 +27,6 @@ class coroutine_chain_t
 {
   private:
     std::optional<std::coroutine_handle<promise_type>> m_suspended_handle;
-    std::atomic_flag m_suspended_handle_barrier;
     std::atomic_flag m_suspended_handle_stored;
     continuation_data m_next;
 
@@ -41,9 +40,8 @@ class coroutine_chain_t
     std::optional<std::coroutine_handle<promise_type>> reset_suspended_handle()
     {
       auto result = std::exchange(m_suspended_handle, std::nullopt);
-      m_suspended_handle_barrier.clear(std::memory_order_release);
-      m_suspended_handle_stored.clear(std::memory_order_release);
-      m_suspended_handle_barrier.notify_all();
+      std::atomic_thread_fence(std::memory_order_release);
+      m_suspended_handle_stored.clear(std::memory_order_relaxed);
       m_suspended_handle_stored.notify_all();
       return result;
     }
@@ -52,7 +50,8 @@ class coroutine_chain_t
     {
       CF_PROFILE_SCOPE();
 
-      m_suspended_handle_stored.wait(false, std::memory_order_acquire);
+      m_suspended_handle_stored.wait(false, std::memory_order_relaxed);
+      std::atomic_thread_fence(std::memory_order_acquire);
 
       auto suspended_handle = reset_suspended_handle();
       suspended_handle->resume();
@@ -97,7 +96,8 @@ class coroutine_chain_t
     {
       CF_PROFILE_SCOPE();
 
-      m_suspended_handle_stored.wait(false, std::memory_order_acquire);
+      m_suspended_handle_stored.wait(false, std::memory_order_relaxed);
+      std::atomic_thread_fence(std::memory_order_acquire);
       CF_ATTACH_NOTE("current:", m_suspended_handle->address());
       CF_ATTACH_NOTE("next:", o.m_next.coro.address());
 
@@ -114,7 +114,8 @@ class coroutine_chain_t
       CF_PROFILE_ZONE(suspend_wait, "Suspend store");
 
       m_suspended_handle = suspended_handle;
-      m_suspended_handle_stored.test_and_set(std::memory_order_release);
+      std::atomic_thread_fence(std::memory_order_release);
+      m_suspended_handle_stored.test_and_set(std::memory_order_relaxed);
       m_suspended_handle_stored.notify_all();
     }
 };

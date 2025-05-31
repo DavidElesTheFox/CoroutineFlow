@@ -134,8 +134,7 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         result = std::optional<T>(std::forward<R>(val));
-        result_stored.test_and_set(std::memory_order_release);
-        result_stored.notify_all();
+        on_result_set();
         CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
       }
       template <typename R>
@@ -145,8 +144,7 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         result = std::optional<T>(val);
-        result_stored.test_and_set(std::memory_order_release);
-        result_stored.notify_all();
+        on_result_set();
         CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
       }
       template <typename R>
@@ -155,21 +153,25 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         result = std::optional<T>(val);
-        result_stored.test_and_set(std::memory_order_release);
-        result_stored.notify_all();
+        on_result_set();
         CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
       }
       void unhandled_exception()
       {
         CF_PROFILE_SCOPE();
-
         result = std::unexpected(std::current_exception());
-        result_stored.test_and_set(std::memory_order_release);
-        result_stored.notify_all();
+        on_result_set();
         CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
       }
       template <typename U>
       auto await_transform(task<U> task);
+
+      void on_result_set()
+      {
+        std::atomic_thread_fence(std::memory_order_release);
+        result_stored.test_and_set(std::memory_order_relaxed);
+        result_stored.notify_all();
+      }
   };
   template <typename T>
   template <typename U>
@@ -221,7 +223,9 @@ namespace __details
         CF_ATTACH_NOTE("Async task: ", current_handle.address());
 
         promise_t& promise = current_handle.promise();
-        promise.result_stored.wait(false, std::memory_order_acquire);
+        promise.result_stored.wait(false, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+
         auto result = std::move(promise.result);
         if (was_not_suspended)
         {

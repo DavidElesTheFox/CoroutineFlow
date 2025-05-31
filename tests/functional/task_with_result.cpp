@@ -5,13 +5,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-/*
- - Functional
-   - testing 'waiting for result in await_resume'
-   - testing 'waiting for stored result in async`
-   - testing 'waiting return value' in promise
-*/
-
 namespace cf = coroutine_flow;
 using points_t = cf::__details::testing::test_injection_points_t;
 using flow_controller_t =
@@ -32,7 +25,6 @@ void register_flow_control_for(points_t point,
 
 SCENARIO("smart await")
 {
-
   GIVEN("Coroutine 'A' that calls 'B'")
   {
     std::atomic_bool called_A{ false };
