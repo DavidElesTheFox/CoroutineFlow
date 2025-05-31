@@ -7,7 +7,6 @@
 
 /*
  - Functional
-   - testing 'smart await'
    - testing 'waiting for result in await_resume'
    - testing 'waiting for stored result in async`
    - testing 'waiting return value' in promise
@@ -20,18 +19,22 @@ using flow_controller_t =
 using test_injection_dispatcher_t =
     cf::__details::testing::test_injection_dispatcher_t;
 
+namespace
+{
+void register_flow_control_for(points_t point,
+                               flow_controller_t& flow_controller)
+{
+  test_injection_dispatcher_t::instance().register_callback(
+      point,
+      [&](void* object) { flow_controller.touch(point, object); });
+}
+} // namespace
+
 SCENARIO("smart await")
 {
 
   GIVEN("Coroutine 'A' that calls 'B'")
   {
-    std::promise<void*> coro_A_address;
-    std::shared_future<void*> coro_A_address_future =
-        coro_A_address.get_future();
-    std::promise<void*> coro_B_address;
-    std::shared_future<void*> coro_B_address_future =
-        coro_B_address.get_future();
-
     std::atomic_bool called_A{ false };
     std::atomic_bool called_B{ false };
 
@@ -53,6 +56,12 @@ SCENARIO("smart await")
 
     WHEN("'B' finishes before 'A' is suspended")
     {
+      std::promise<void*> coro_A_address;
+      std::shared_future<void*> coro_A_address_future =
+          coro_A_address.get_future();
+      std::promise<void*> coro_B_address;
+      std::shared_future<void*> coro_B_address_future =
+          coro_B_address.get_future();
       flow_controller_t flow_controller;
 
       test_injection_dispatcher_t::instance().clear();
@@ -73,36 +82,15 @@ SCENARIO("smart await")
             }
           });
 
-      test_injection_dispatcher_t::instance().register_callback(
-          points_t::task__run_async__before_test_and_set,
-          [&](void* object)
-          {
-            flow_controller.touch(
-                points_t::task__run_async__before_test_and_set,
-                object);
-          });
-      test_injection_dispatcher_t::instance().register_callback(
-          points_t::task__run_async__async_call_finished,
-          [&](void* object)
-          {
-            flow_controller.touch(
-                points_t::task__run_async__async_call_finished,
-                object);
-          });
-      test_injection_dispatcher_t::instance().register_callback(
-          points_t::task__await_ready__after_test_and_set,
-          [&](void* object)
-          {
-            flow_controller.touch(
-                points_t::task__await_ready__after_test_and_set,
-                object);
-          });
-      test_injection_dispatcher_t::instance().register_callback(
-          points_t::task__await_ready__begin,
-          [&](void* object)
-          {
-            flow_controller.touch(points_t::task__await_ready__begin, object);
-          });
+      register_flow_control_for(points_t::task__run_async__before_test_and_set,
+                                flow_controller);
+      register_flow_control_for(points_t::task__run_async__async_call_finished,
+                                flow_controller);
+      register_flow_control_for(points_t::task__await_ready__after_test_and_set,
+                                flow_controller);
+      register_flow_control_for(points_t::task__await_ready__begin,
+                                flow_controller);
+
       flow_controller.append({ "B finished",
                                points_t::task__run_async__async_call_finished,
                                coro_B_address_future });
@@ -121,6 +109,66 @@ SCENARIO("smart await")
         coro_A().sync_wait(&thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
+        SUCCEED(
+            "Test was not blocked, thus it went according to the defined flow");
+      }
+    }
+    WHEN("'B' finishes while 'A' is suspended")
+    {
+      std::promise<void*> coro_A_address;
+      std::shared_future<void*> coro_A_address_future =
+          coro_A_address.get_future();
+      std::promise<void*> coro_B_address;
+      std::shared_future<void*> coro_B_address_future =
+          coro_B_address.get_future();
+      flow_controller_t flow_controller;
+
+      test_injection_dispatcher_t::instance().clear();
+      test_injection_dispatcher_t::instance().register_callback(
+          points_t::task__constructor,
+          [&](void* object) mutable
+          {
+            static bool coro_a_is_stored = false;
+
+            if (coro_a_is_stored == false)
+            {
+              coro_a_is_stored = true;
+              coro_A_address.set_value(object);
+            }
+            else
+            {
+              coro_B_address.set_value(object);
+            }
+          });
+      register_flow_control_for(points_t::task__run_async__before_test_and_set,
+                                flow_controller);
+      register_flow_control_for(points_t::task__run_async__async_call_finished,
+                                flow_controller);
+      register_flow_control_for(points_t::task__await_ready__after_test_and_set,
+                                flow_controller);
+      register_flow_control_for(
+          points_t::task__await_suspend__after_test_and_set,
+          flow_controller);
+      flow_controller.append({ "'A' end of await ready",
+                               points_t::task__await_ready__after_test_and_set,
+                               coro_A_address_future });
+      flow_controller.append({ "'B' finished",
+                               points_t::task__run_async__async_call_finished,
+                               coro_B_address_future });
+      flow_controller.append({ "'A' decided not suspend",
+                               points_t::task__await_ready__after_test_and_set,
+                               coro_A_address_future });
+      flow_controller.append({ "A trys to continue suspended handle",
+                               points_t::task__run_async__before_test_and_set,
+                               coro_A_address_future });
+      THEN("During execute everything should be called")
+      {
+        simple_thread_pool thread_pool;
+        coro_A().sync_wait(&thread_pool);
+        REQUIRE(called_A);
+        REQUIRE(called_B);
+        SUCCEED(
+            "Test was not blocked, thus it went according to the defined flow");
       }
     }
   }

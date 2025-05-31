@@ -247,14 +247,22 @@ namespace __details
           std::coroutine_handle<other_promise_type> suspended_handle)
       {
         CF_PROFILE_SCOPE();
+        TEST_INJECTION(__details::testing::test_injection_points_t::
+                           task__await_suspend__begin,
+                       suspended_handle.address());
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("Async call is finished");
+          TEST_INJECTION(__details::testing::test_injection_points_t::
+                             task__await_suspend__before_test_and_set,
+                         suspended_handle.address());
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acquire);
           CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
-
+          TEST_INJECTION(__details::testing::test_injection_points_t::
+                             task__await_suspend__after_test_and_set,
+                         suspended_handle.address());
           if (has_been_resumed == false)
           {
             return false;
