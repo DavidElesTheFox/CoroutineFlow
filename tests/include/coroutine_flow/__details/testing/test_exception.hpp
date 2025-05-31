@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+namespace coroutine_flow::__details::testing
+{
 struct test_exception_t : std::runtime_error
 {
     test_exception_t()
@@ -9,3 +11,4 @@ struct test_exception_t : std::runtime_error
     {
     }
 };
+} // namespace coroutine_flow::__details::testing

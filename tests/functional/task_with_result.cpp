@@ -1,6 +1,6 @@
 #include <coroutine_flow/__details/testing/execution_flow_controller.hpp>
+#include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 #include <coroutine_flow/__details/testing/test_injection.hpp>
-#include <coroutine_flow/simple_thread_pool.hpp>
 #include <coroutine_flow/task.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +11,9 @@ using flow_controller_t =
     cf::__details::testing::execution_flow_controller<points_t>;
 using test_injection_dispatcher_t =
     cf::__details::testing::test_injection_dispatcher_t;
+
+using cf::__details::testing::simple_thread_pool;
+using cf::__details::testing::test_exception_t;
 
 namespace
 {

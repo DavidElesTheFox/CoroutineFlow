@@ -4,7 +4,7 @@
 */
 #include <catch2/catch_test_macros.hpp>
 
-#include <coroutine_flow/simple_thread_pool.hpp>
+#include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 
 #include <coroutine_flow/profiler.hpp>
 #include <coroutine_flow/task.hpp>
@@ -16,6 +16,9 @@
 
 namespace cf = coroutine_flow;
 using namespace std::chrono_literals;
+
+using cf::__details::testing::simple_thread_pool;
+using cf::__details::testing::test_exception_t;
 
 struct NonDefaultConstructibleClass
 {

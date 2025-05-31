@@ -190,17 +190,14 @@ namespace __details
 
       bool await_ready()
       {
+        using injection_point = __details::testing::test_injection_points_t;
         CF_PROFILE_SCOPE();
-        TEST_INJECTION(__details::testing::test_injection_points_t::
-                           task__await_ready__begin,
+        TEST_INJECTION(injection_point::task__await_ready__begin,
                        suspended_handle.address());
 
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("async call is already finished");
-          TEST_INJECTION(__details::testing::test_injection_points_t::
-                             task__await_ready__before_test_and_set,
-                         suspended_handle.address());
 
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
@@ -208,8 +205,7 @@ namespace __details
           was_not_suspended = has_been_resumed == false;
 
           CF_ATTACH_NOTE("Do we suspend now? ", was_not_suspended);
-          TEST_INJECTION(__details::testing::test_injection_points_t::
-                             task__await_ready__after_test_and_set,
+          TEST_INJECTION(injection_point::task__await_ready__after_test_and_set,
                          suspended_handle.address());
 
           return was_not_suspended;
@@ -251,22 +247,17 @@ namespace __details
           std::coroutine_handle<other_promise_type> suspended_handle)
       {
         CF_PROFILE_SCOPE();
-        TEST_INJECTION(__details::testing::test_injection_points_t::
-                           task__await_suspend__begin,
-                       suspended_handle.address());
+        using injection_point = __details::testing::test_injection_points_t;
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("Async call is finished");
-          TEST_INJECTION(__details::testing::test_injection_points_t::
-                             task__await_suspend__before_test_and_set,
-                         suspended_handle.address());
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acquire);
           CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
-          TEST_INJECTION(__details::testing::test_injection_points_t::
-                             task__await_suspend__after_test_and_set,
-                         suspended_handle.address());
+          TEST_INJECTION(
+              injection_point::task__await_suspend__after_test_and_set,
+              suspended_handle.address());
           if (has_been_resumed == false)
           {
             return false;
@@ -304,9 +295,8 @@ class task
         : m_coro_handle(std::move(coro_handle))
     {
       CF_PROFILE_SCOPE();
-      TEST_INJECTION(
-          __details::testing::test_injection_points_t::task__constructor,
-          coro_handle.address());
+      using injection_point = __details::testing::test_injection_points_t;
+      TEST_INJECTION(injection_point::task__constructor, coro_handle.address());
     }
 
     void* address() { return m_coro_handle.address(); }
@@ -368,6 +358,7 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
     std::function<void(std::function<void()>)> schedule_callback,
     other_promise_t* suspended_promise)
 {
+  using injection_point = __details::testing::test_injection_points_t;
   CF_PROFILE_SCOPE();
 
   get_promise().schedule_callback = schedule_callback;
@@ -385,11 +376,9 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
                            .address());
 
         p_coro_handle();
-        TEST_INJECTION(__details::testing::test_injection_points_t::
-                           task__run_async__async_call_finished,
+        TEST_INJECTION(injection_point::task__run_async__async_call_finished,
                        p_coro_handle.address());
-        TEST_INJECTION(__details::testing::test_injection_points_t::
-                           task__run_async__before_test_and_set,
+        TEST_INJECTION(injection_point::task__run_async__before_test_and_set,
                        std::coroutine_handle<other_promise_t>::from_promise(
                            *p_suspended_promise)
                            .address());

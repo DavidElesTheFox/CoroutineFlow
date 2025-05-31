@@ -1,13 +1,15 @@
 #pragma once
 
+#include <coroutine_flow/__details/testing/test_exception.hpp>
 #include <coroutine_flow/profiler.hpp>
 #include <coroutine_flow/task.hpp>
-#include <coroutine_flow/test_exception.hpp>
 
 #include <functional>
 #include <list>
 #include <thread>
 
+namespace coroutine_flow::__details::testing
+{
 class simple_thread_pool
 {
   public:
@@ -91,3 +93,4 @@ class simple_thread_pool
     std::mutex m_errors_mutex;
     std::vector<std::exception_ptr> m_errors;
 };
+} // namespace coroutine_flow::__details::testing
