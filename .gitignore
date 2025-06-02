@@ -30,5 +30,8 @@
 # Build directories
 build*/
 
+# Captures
+*.tracy
+
 # Generated files
 include/coroutine_flow/lib_config.hpp
