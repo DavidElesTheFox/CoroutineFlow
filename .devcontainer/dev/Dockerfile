@@ -16,9 +16,12 @@ RUN apt update && apt install -y \
  git \ 
  gdb
 
+ # libdbus-glib-1-dev for tracy-capture 
 RUN apt update && apt install -y \
  vim \
- less 
+ less \
+ tmux \
+ libdbus-glib-1-dev 
 
 RUN ulimit -c unlimited
 

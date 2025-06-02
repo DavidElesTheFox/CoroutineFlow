@@ -50,7 +50,7 @@
                     "value": "ON"
                 },
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CF_COMPILE_OPTIONS": "-O2;-g"
+                "CF_COMPILE_OPTIONS": "-O1;-g"
             }
         },
         {
@@ -59,7 +59,7 @@
             "description": "Developement build config with thread sanitizer",
             "inherits": "dev-clang",
             "cacheVariables": {
-                "CF_COMPILE_OPTIONS": "-O2;-g;-fsanitize=thread",
+                "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=thread",
                 "CF_LINK_OPTIONS": "-fsanitize=thread"
             }
         }

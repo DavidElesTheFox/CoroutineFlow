@@ -49,10 +49,10 @@ class simple_thread_pool
     }
     simple_thread_pool() = default;
     simple_thread_pool(const simple_thread_pool&) = delete;
-    simple_thread_pool(simple_thread_pool&&) = default;
+    simple_thread_pool(simple_thread_pool&&) = delete;
 
     simple_thread_pool& operator=(const simple_thread_pool&) = delete;
-    simple_thread_pool& operator=(simple_thread_pool&&) = default;
+    simple_thread_pool& operator=(simple_thread_pool&&) = delete;
 
     ~simple_thread_pool()
     {

@@ -2,6 +2,7 @@
 
  - Memory tests
 */
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
@@ -683,7 +684,6 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
   REQUIRE(coro_2_call_count == 1);
   handle_error(std::move(thread_pool));
 }
-
 TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
 {
   CF_PROFILE_SCOPE();
