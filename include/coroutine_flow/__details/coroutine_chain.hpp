@@ -54,7 +54,7 @@ class coroutine_chain_t
       std::atomic_thread_fence(std::memory_order_acquire);
 
       auto suspended_handle = reset_suspended_handle();
-      suspended_handle->resume();
+      suspended_handle.value().resume();
       if (suspended_handle->done() == false)
       {
         return;

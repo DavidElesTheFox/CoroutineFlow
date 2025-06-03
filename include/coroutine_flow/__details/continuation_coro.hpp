@@ -9,7 +9,6 @@
 
 namespace coroutine_flow::__details
 {
-
 class final_coroutine_t
 {
   protected:

@@ -54,13 +54,70 @@
             }
         },
         {
+            "name": "dev-g++-release",
+            "displayName": "Developement Config g++ Release",
+            "description": "Developement build config Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-release",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": {
+                    "type": "BOOL",
+                    "value": "TRUE"
+                },
+                "CF_BUILD_EXAMPLES": {
+                    "type": "BOOL",
+                    "value": "ON"
+                },
+                "CF_BUILD_TESTS": {
+                    "type": "BOOL",
+                    "value": "ON"
+                },
+                "CMAKE_BUILD_TYPE": "Release",
+                "CF_COMPILE_OPTIONS": "-O3"
+            }
+        },
+        {
+            "name": "dev-clang-release",
+            "displayName": "Developement Config clang Release",
+            "description": "Developement build config Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-release",
+            "toolchainFile": "${sourceDir}/cmake/clang_toolchain.cmake",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": {
+                    "type": "BOOL",
+                    "value": "TRUE"
+                },
+                "CF_BUILD_EXAMPLES": {
+                    "type": "BOOL",
+                    "value": "ON"
+                },
+                "CF_BUILD_TESTS": {
+                    "type": "BOOL",
+                    "value": "ON"
+                },
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CF_COMPILE_OPTIONS": "-O3"
+            }
+        },
+        {
             "name": "dev-clang-thread-sanitizer",
-            "displayName": "Developement Config clang threadsanitizer",
+            "displayName": "Developement Config clang thread sanitizer",
             "description": "Developement build config with thread sanitizer",
             "inherits": "dev-clang",
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=thread",
                 "CF_LINK_OPTIONS": "-fsanitize=thread"
+            }
+        },
+        {
+            "name": "dev-clang-memory-sanitizer",
+            "displayName": "Developement Config clang memory sanitizer",
+            "description": "Developement build config with memory sanitizer",
+            "inherits": "dev-clang",
+            "cacheVariables": {
+                "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=memory",
+                "CF_LINK_OPTIONS": "-fsanitize=memory"
             }
         }
     ],
