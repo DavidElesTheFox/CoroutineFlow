@@ -26,6 +26,7 @@
 *.exe
 *.out
 *.app
+tools/bin/tracy-capture
 
 # Build directories
 build*/

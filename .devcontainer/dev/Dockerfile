@@ -28,3 +28,5 @@ RUN ulimit -c unlimited
 WORKDIR /app
 
 ADD . /app
+
+RUN echo "export PATH=$PATH:/app/tools/bin" >> $HOME/.bashrc
