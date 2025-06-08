@@ -1,6 +1,7 @@
 #pragma once
 
 #include <coroutine_flow/__details/scope_exit.hpp>
+#include <coroutine_flow/__details/testing/test_injection.hpp>
 #include <coroutine_flow/profiler.hpp>
 
 #include <atomic>

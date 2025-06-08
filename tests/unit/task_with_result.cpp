@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <coroutine_flow/__details/testing/memory_sentinel.hpp>
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 
 #include <coroutine_flow/profiler.hpp>
@@ -199,92 +200,164 @@ void handle_error(simple_thread_pool&& thread_pool)
   FAIL("Error occurred in thread pool");
 }
 
+class memory_check_t
+{
+  public:
+    memory_check_t()
+    {
+      cf::__details::testing::test_injection_dispatcher_t::instance()
+          .register_callback(cf::__details::testing::test_injection_points_t::
+                                 object__construct,
+                             [&](void* object)
+                             { m_memory_sentinel.on_construct(object); });
+      cf::__details::testing::test_injection_dispatcher_t::instance()
+          .register_callback(
+              cf::__details::testing::test_injection_points_t::object__destruct,
+              [&](void* object) { m_memory_sentinel.on_destruct(object); });
+    }
+    void check()
+    {
+      cf::__details::testing::test_injection_dispatcher_t::instance().clear();
+      auto leaks = m_memory_sentinel.collect_memory_leaks();
+      if (leaks.empty() == false)
+      {
+        for (const auto& [object, location] : leaks)
+        {
+          std::cout << "object: " << object << " at: \n"
+                    << location << std::endl;
+        }
+        FAIL("Memory leak found");
+      }
+      auto errors = m_memory_sentinel.get_errors();
+      if (errors.empty() == false)
+      {
+        for (const auto& error : errors)
+        {
+          std::cout << error.get_message() << "\n"
+                    << "allocated at: \n"
+                    << error.get_construction_location() << "\n"
+                    << "error location: \n"
+                    << error.get_error_location() << std::endl;
+        }
+        FAIL("Memory error detected");
+      }
+    }
+
+  private:
+    cf::__details::testing::memory_sentinel_t m_memory_sentinel;
+};
+
 constexpr const std::chrono::duration c_test_case_timeout = 1s;
 TEST_CASE("Check Destructor when not scheduled", "[task]")
 {
+  memory_check_t memory_checker;
   bool coroutine_state_destroyed = false;
   {
     auto coro = [](OnExit&& checker) -> cf::task<int> { co_return 2; };
     coro({ [&] { coroutine_state_destroyed = true; } });
   }
   REQUIRE(coroutine_state_destroyed);
+  memory_checker.check();
 }
 
 TEST_CASE("Check Destructor when scheduled", "[task]")
 {
-  CF_PROFILE_SCOPE();
-  bool coroutine_state_destroyed = false;
+  try
   {
-    CF_PROFILE_SCOPE_N("coro owner_scope");
-    simple_thread_pool thread_pool;
-    auto coro = [](OnExit&& checker) -> cf::task<int>
+
+    memory_check_t memory_checker;
     {
-      CF_PROFILE_SCOPE_N("coro");
-      co_return 2;
-    };
-    coro({ [&] { coroutine_state_destroyed = true; } }).run_async(&thread_pool);
-    handle_error(std::move(thread_pool));
+      CF_PROFILE_SCOPE();
+      bool coroutine_state_destroyed = false;
+      {
+        CF_PROFILE_SCOPE_N("coro owner_scope");
+        simple_thread_pool thread_pool;
+        auto coro = [](OnExit&& checker) -> cf::task<int>
+        {
+          CF_PROFILE_SCOPE_N("coro");
+          co_return 2;
+        };
+        coro({ [&] { coroutine_state_destroyed = true; } })
+            .sync_wait(&thread_pool);
+        handle_error(std::move(thread_pool));
+      }
+      REQUIRE(coroutine_state_destroyed);
+    }
+    memory_checker.check();
   }
-  REQUIRE(coroutine_state_destroyed);
+  catch (const std::exception& e)
+  {
+
+    FAIL("error occured");
+  }
 }
 
 #pragma region Execution Tests
 
 TEST_CASE("Neasted coroutine level 1", "[task]")
 {
-  simple_thread_pool thread_pool;
-  auto [called_event, called_token] = Event::create("coroutine is called");
-
-  auto coro_1 = [p_called_event =
-                     std::move(called_event)]() mutable -> cf::task<int>
+  memory_check_t memory_checker;
   {
-    p_called_event.trigger();
-    co_return 1;
-  };
-  coro_1().run_async(&thread_pool);
+    simple_thread_pool thread_pool;
+    auto [called_event, called_token] = Event::create("coroutine is called");
 
-  REQUIRE(called_token.is_triggered(c_test_case_timeout));
-  handle_error(std::move(thread_pool));
+    auto coro_1 = [p_called_event =
+                       std::move(called_event)]() mutable -> cf::task<int>
+    {
+      p_called_event.trigger();
+      co_return 1;
+    };
+    coro_1().run_async(&thread_pool);
+
+    REQUIRE(called_token.is_triggered(c_test_case_timeout));
+    handle_error(std::move(thread_pool));
+  }
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 2", "[task]")
 {
-  simple_thread_pool thread_pool;
-  auto [called_event_1, called_token_1] =
-      Event::create("coroutine 1 is called");
-
-  auto coro_1 = [p_called_event =
-                     std::move(called_event_1)]() mutable -> cf::task<int>
+  memory_check_t memory_checker;
   {
-    CF_PROFILE_MARK("coro_1");
-    p_called_event.trigger();
-    co_return 1;
-  };
+    simple_thread_pool thread_pool;
+    auto [called_event_1, called_token_1] =
+        Event::create("coroutine 1 is called");
 
-  auto [called_event_2, called_token_2] =
-      Event::create("coroutine 2 is called");
+    auto coro_1 = [p_called_event =
+                       std::move(called_event_1)]() mutable -> cf::task<int>
+    {
+      CF_PROFILE_MARK("coro_1");
+      p_called_event.trigger();
+      co_return 1;
+    };
 
-  auto coro_2 = [p_called_event = std::move(called_event_2),
-                 &coro_1]() mutable -> cf::task<int>
-  {
-    CF_PROFILE_MARK("coro_2_1");
+    auto [called_event_2, called_token_2] =
+        Event::create("coroutine 2 is called");
 
-    int result = co_await coro_1();
-    CF_PROFILE_MARK("coro_2_2");
-    REQUIRE(result == 1);
-    p_called_event.trigger();
-    co_return 2;
-  };
+    auto coro_2 = [p_called_event = std::move(called_event_2),
+                   &coro_1]() mutable -> cf::task<int>
+    {
+      CF_PROFILE_MARK("coro_2_1");
 
-  coro_2().run_async(&thread_pool);
+      int result = co_await coro_1();
+      CF_PROFILE_MARK("coro_2_2");
+      REQUIRE(result == 1);
+      p_called_event.trigger();
+      co_return 2;
+    };
 
-  REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
-  REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
-  handle_error(std::move(thread_pool));
+    coro_2().run_async(&thread_pool);
+
+    REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
+    REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
+    handle_error(std::move(thread_pool));
+  }
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 3", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   // Coroutine 1
@@ -338,10 +411,12 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
   REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 4", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   // Coroutine 1
@@ -406,10 +481,12 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_4.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
 {
+  memory_check_t memory_checker;
   CF_PROFILE_SCOPE();
   simple_thread_pool thread_pool;
   auto [called_event_1, called_token_1] =
@@ -452,11 +529,13 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
   REQUIRE(coro_1_call_count == 2);
   REQUIRE(coro_2_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
 {
   CF_PROFILE_SCOPE();
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   // Coroutine 1
@@ -534,10 +613,12 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
   REQUIRE(coro_2_call_count == 2);
   REQUIRE(coro_3_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
 {
+  memory_check_t memory_checker;
   CF_PROFILE_SCOPE();
 
   simple_thread_pool thread_pool;
@@ -640,10 +721,12 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
   REQUIRE(coro_3_call_count == 2);
   REQUIRE(coro_4_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [called_event_1, called_token_1] =
       Event::create("coroutine 1 is called");
@@ -683,9 +766,11 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
   REQUIRE(coro_1_call_count == 3);
   REQUIRE(coro_2_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
 {
+  memory_check_t memory_checker;
   CF_PROFILE_SCOPE();
   simple_thread_pool thread_pool;
 
@@ -772,12 +857,14 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
   REQUIRE(coro_2_call_count == 3);
   REQUIRE(coro_3_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
 {
   CF_PROFILE_SCOPE();
 
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   // Coroutine 1
@@ -893,12 +980,14 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
   REQUIRE(coro_3_call_count == 3);
   REQUIRE(coro_4_call_count == 1);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Mixed data", "[task]")
 {
   CF_PROFILE_SCOPE();
 
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [called_event_1, called_token_1] =
       Event::create("coroutine 1 is called");
@@ -940,6 +1029,7 @@ TEST_CASE("Mixed data", "[task]")
   REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
   REQUIRE(called_token_3.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 #pragma endregion
 
@@ -947,6 +1037,7 @@ TEST_CASE("Mixed data", "[task]")
 
 TEST_CASE("Non Copyable return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   auto coro_1 = []() -> cf::task<NonCopyableClass>
@@ -961,10 +1052,12 @@ TEST_CASE("Non Copyable return type", "[task]")
   coro_2().run_async(&thread_pool);
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Non Moveable return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   auto coro_1 = []() -> cf::task<NonMovableClass>
@@ -979,10 +1072,12 @@ TEST_CASE("Non Moveable return type", "[task]")
   coro_2().run_async(&thread_pool);
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Reference return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   int my_int = 0;
   auto [event, token] = Event::create("coroutine finished");
@@ -1003,10 +1098,12 @@ TEST_CASE("Reference return type", "[task]")
   REQUIRE(my_int == 1);
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Pointer return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   int my_int = 0;
   auto [event, token] = Event::create("coroutine finished");
@@ -1026,10 +1123,12 @@ TEST_CASE("Pointer return type", "[task]")
   REQUIRE(my_int == 1);
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Tuple return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [event, token] = Event::create("coroutine finished");
 
@@ -1051,9 +1150,11 @@ TEST_CASE("Tuple return type", "[task]")
   REQUIRE(token.is_triggered(c_test_case_timeout));
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 TEST_CASE("Non default constructible return type", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   auto coro_1 = [&]() mutable -> cf::task<NonDefaultConstructibleClass>
@@ -1068,6 +1169,7 @@ TEST_CASE("Non default constructible return type", "[task]")
   coro_2().run_async(&thread_pool);
   SUCCEED("This test needs to be only compiled");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 #pragma endregion
 
@@ -1075,6 +1177,7 @@ TEST_CASE("Non default constructible return type", "[task]")
 
 TEST_CASE("Coroutine with exception", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto coro = []() -> cf::task<int>
   {
@@ -1084,10 +1187,12 @@ TEST_CASE("Coroutine with exception", "[task]")
 
   REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Coroutine with exception 2nd level", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [exception_forwarded_event, exception_forwarded_token] =
       Event::create("Exception forwarded");
@@ -1116,10 +1221,12 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
   REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Coroutine with exception 3rd level", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [exception_forwarded_event, exception_forwarded_token] =
       Event::create("Exception forwarded");
@@ -1165,10 +1272,12 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   REQUIRE(exception_forwarded_2_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Coroutine with exception after co_await", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [exception_forwarded_event, exception_forwarded_token] =
       Event::create("Exception forwarded");
@@ -1185,11 +1294,13 @@ TEST_CASE("Coroutine with exception after co_await", "[task]")
 
   REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
 {
   CF_PROFILE_SCOPE();
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto [exception_forwarded_event, exception_forwarded_token] =
       Event::create("Exception forwarded");
@@ -1234,10 +1345,12 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
   REQUIRE_THROWS_AS(coro_3().sync_wait(&thread_pool), test_exception_t);
   REQUIRE(exception_forwarded_token.is_triggered(c_test_case_timeout));
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Exception during schedule", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   thread_pool.set_throw_at_schedule(0);
 
@@ -1245,10 +1358,12 @@ TEST_CASE("Exception during schedule", "[task]")
 
   REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Exception during schedule inside coroutine", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   thread_pool.set_throw_at_schedule(1);
 
@@ -1261,10 +1376,12 @@ TEST_CASE("Exception during schedule inside coroutine", "[task]")
 
   REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("Exception during move", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
@@ -1274,9 +1391,11 @@ TEST_CASE("Exception during move", "[task]")
 
   REQUIRE_THROWS_AS(coro().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 TEST_CASE("Exception during move 2nd level", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
@@ -1291,9 +1410,11 @@ TEST_CASE("Exception during move 2nd level", "[task]")
 
   REQUIRE_THROWS_AS(coro_2().sync_wait(&thread_pool), test_exception_t);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 TEST_CASE("No Exception during move assign", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
@@ -1304,10 +1425,12 @@ TEST_CASE("No Exception during move assign", "[task]")
   coro().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("No Exception during move assign 2nd level", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
@@ -1323,9 +1446,11 @@ TEST_CASE("No Exception during move assign 2nd level", "[task]")
   coro_2().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 TEST_CASE("No Exception during movable class during copy", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
@@ -1336,10 +1461,12 @@ TEST_CASE("No Exception during movable class during copy", "[task]")
   coro().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 
 TEST_CASE("No Exception during movable class during copy 2nd level", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
 
   using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
@@ -1355,6 +1482,7 @@ TEST_CASE("No Exception during movable class during copy 2nd level", "[task]")
   coro_2().sync_wait(&thread_pool);
   SUCCEED("Test pass when no exception occurrs");
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }
 /* Future doesn't supports non movable class
 TEST_CASE("Exception during copy in nonmovable class", "[task]")
@@ -1391,9 +1519,11 @@ TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
 
 TEST_CASE("Check get function", "[task]")
 {
+  memory_check_t memory_checker;
   simple_thread_pool thread_pool;
   auto coro = []() -> cf::task<int> { co_return 2; };
   auto result = coro().sync_wait(&thread_pool);
   REQUIRE(result == 2);
   handle_error(std::move(thread_pool));
+  memory_checker.check();
 }

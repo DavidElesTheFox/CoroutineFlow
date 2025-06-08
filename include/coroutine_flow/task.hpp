@@ -28,8 +28,59 @@ namespace __details
   template <typename T>
   struct result_as_promise_t
   {
-      std::promise<T> result_promise;
-      final_coroutine_t operator()(
+#if CF_ENABLE_INJECTIONS
+      result_as_promise_t()
+      {
+        TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                       this);
+      }
+      ~result_as_promise_t()
+      {
+        TEST_INJECTION(testing::test_injection_points_t::object__destruct,
+                       this);
+      }
+#endif
+      result_as_promise_t(result_as_promise_t&&) = default;
+      std::unique_ptr<std::promise<T>> result_promise{
+        std::make_unique<std::promise<T>>()
+      };
+
+      static final_coroutine_t
+          execute_on(final_coroutine_t::fall_through_t _,
+                     result_as_promise_t extension,
+                     std::expected<std::optional<T>, std::exception_ptr> result)
+      {
+        if constexpr (std::movable<T>)
+        {
+          extension(std::move(result));
+        }
+        else
+        {
+          extension(result);
+        }
+        co_return;
+      }
+      static final_coroutine_t
+          execute_on(result_as_promise_t extension,
+                     std::expected<std::optional<T>, std::exception_ptr> result)
+      {
+        if constexpr (std::movable<T>)
+        {
+          extension(std::move(result));
+        }
+        else
+        {
+          extension(result);
+        }
+        co_return;
+      }
+      static final_coroutine_t skip(result_as_promise_t&& extension)
+      {
+        co_return extension();
+      }
+
+    private:
+      void operator()(
           std::expected<std::optional<T>, std::exception_ptr> result) noexcept
       {
         CF_PROFILE_SCOPE_N("result_as_promise");
@@ -38,25 +89,19 @@ namespace __details
           assert(result->has_value());
           if constexpr (std::movable<T>)
           {
-            result_promise.set_value(std::move(**result));
+            result_promise->set_value(std::move(**result));
           }
           else
           {
-            result_promise.set_value(**result);
+            result_promise->set_value(**result);
           }
         }
         else
         {
-          result_promise.set_exception(result.error());
+          result_promise->set_exception(result.error());
         }
-        co_return;
       }
-
-      final_coroutine_t operator()() noexcept
-      {
-        CF_PROFILE_SCOPE();
-        co_return;
-      }
+      void operator()() noexcept { CF_PROFILE_SCOPE(); }
   };
 
   template <typename T>
@@ -73,11 +118,20 @@ namespace __details
 
       __details::result_as_promise_t<T> extension;
       bool execute_extension{ false };
-
+      bool destroy_handle{ false };
+#if CF_ENABLE_INJECTIONS
+      task_promise_t()
+      {
+        TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                       this);
+      }
+#endif
       ~task_promise_t()
       {
         CF_PROFILE_SCOPE();
         CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
+        TEST_INJECTION(testing::test_injection_points_t::object__destruct,
+                       this);
       }
 
       __details::continuation_data& get_next()
@@ -106,6 +160,7 @@ namespace __details
       auto final_suspend() noexcept
       {
         CF_PROFILE_SCOPE();
+        CF_ATTACH_NOTE("destroy handle", destroy_handle);
         if (execute_extension)
         {
           /*
@@ -114,16 +169,36 @@ namespace __details
           */
           if constexpr (std::movable<T>)
           {
-            return extension(std::move(result));
+            if (destroy_handle)
+            {
+              return result_as_promise_t<T>::execute_on({},
+                                                        std::move(extension),
+                                                        std::move(result));
+            }
+            else
+            {
+              return result_as_promise_t<T>::execute_on(std::move(extension),
+                                                        std::move(result));
+            }
           }
           else
           {
-            return extension(result);
+            if (destroy_handle)
+            {
+              return result_as_promise_t<T>::execute_on({},
+                                                        std::move(extension),
+                                                        result);
+            }
+            else
+            {
+              return result_as_promise_t<T>::execute_on(std::move(extension),
+                                                        result);
+            }
           }
         }
         else
         {
-          return extension();
+          return result_as_promise_t<T>::skip(std::move(extension));
         }
       }
 
@@ -297,6 +372,7 @@ class task
       CF_PROFILE_SCOPE();
       using injection_point = __details::testing::test_injection_points_t;
       TEST_INJECTION(injection_point::task__constructor, coro_handle.address());
+      TEST_INJECTION(injection_point::object__construct, this);
     }
 
     void* address() { return m_coro_handle.address(); }
@@ -307,6 +383,9 @@ class task
       {
         m_coro_handle.destroy();
       }
+      TEST_INJECTION(
+          __details::testing::test_injection_points_t::object__destruct,
+          this);
     }
 
     template <typename scheduler_t>
@@ -314,6 +393,29 @@ class task
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
     void run_async(scheduler_t scheduler) &&
+    {
+      std::move(*this).schedule(scheduler, true);
+    }
+
+    template <typename scheduler_t>
+      requires(
+          std::copyable<scheduler_t> &&
+          is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
+    T sync_wait(scheduler_t scheduler) &&
+    {
+      auto handle = std::move(*this).schedule(scheduler, false);
+      assert(m_result_future.valid());
+      auto result = m_result_future.get();
+      handle.destroy();
+      return result;
+    }
+
+  private:
+    template <typename scheduler_t>
+      requires(
+          std::copyable<scheduler_t> &&
+          is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
+    handle_t schedule(scheduler_t scheduler, bool destroy_handle) &&
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
@@ -323,25 +425,15 @@ class task
         tag_invoke(schedule_task_t{}, p_scheduler, std::move(task_call));
       };
       m_coro_handle.promise().execute_extension = true;
+      m_coro_handle.promise().destroy_handle = destroy_handle;
       m_result_future =
-          m_coro_handle.promise().extension.result_promise.get_future();
+          m_coro_handle.promise().extension.result_promise->get_future();
       tag_invoke(schedule_task_t{},
                  scheduler,
                  [p_current_handle = m_coro_handle] { p_current_handle(); });
-      m_coro_handle = {};
-    }
-    template <typename scheduler_t>
-      requires(
-          std::copyable<scheduler_t> &&
-          is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    T sync_wait(scheduler_t scheduler) &&
-    {
-      std::move(*this).run_async(scheduler);
-
-      return m_result_future.get();
+      return std::exchange(m_coro_handle, {});
     }
 
-  private:
     template <__details::coroutine_chain_holder other_promise_t>
     awaiter_t<other_promise_t>
         run_async(std::function<void(std::function<void()>)> schedule_callback,
@@ -349,7 +441,7 @@ class task
 
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
-    std::future<T> m_result_future;
+    std::shared_future<T> m_result_future;
 };
 
 template <typename T>

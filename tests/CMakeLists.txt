@@ -20,6 +20,7 @@ target_link_libraries(${arg_TEST_NAME}
     PUBLIC
         coroutine_flow::coroutine_flow
         Catch2::Catch2WithMain
+        stdc++_libbacktrace
 )
 target_include_directories(${arg_TEST_NAME}
     PUBLIC

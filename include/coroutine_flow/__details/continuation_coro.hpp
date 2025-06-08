@@ -1,6 +1,7 @@
 #pragma once
 
 #include <coroutine_flow/__details/continuation_data.hpp>
+#include <coroutine_flow/__details/testing/test_injection.hpp>
 #include <coroutine_flow/profiler.hpp>
 
 #include <cassert>
@@ -17,11 +18,24 @@ class final_coroutine_t
   public:
     using handle_t = std::coroutine_handle<promise_t>;
     using promise_type = promise_t;
+    struct fall_through_t
+    {
+    };
 
   protected:
+    struct final_awaiter
+    {
+        bool fall_through{ false };
+        bool await_ready() noexcept { return fall_through; }
+
+        void await_resume() noexcept {}
+
+        void await_suspend(std::coroutine_handle<>) noexcept {}
+    };
     struct awaiter_t
     {
         continuation_data handle;
+        bool destroy_suspended_handle{ false };
         bool await_ready() noexcept { return false; }
 
         void await_resume() noexcept {}
@@ -32,37 +46,39 @@ class final_coroutine_t
         {
           CF_PROFILE_SCOPE();
           // Handle can be empty when basically it is a null extension.
-          if (handle.is_empty() == false)
+          assert(handle.is_empty() == false);
+          assert(handle.coro.done() == false &&
+                 "The final coroutine shouldn't be done already.");
+          assert(
+              suspended_handle.done() &&
+              "The final handle will not continue the suspended handle. Thus "
+              "we expect that it is already finished, but not destroyed.");
+
+          CF_ATTACH_NOTE("suspended_handle: ", suspended_handle.address());
+          CF_ATTACH_NOTE("handle: ", handle.coro.address());
+          CF_ATTACH_NOTE("destroy_suspended_handle", destroy_suspended_handle);
+          /*
+          Do not store continuation here. This is a final coroutine. It
+          means that the suspended handle won't be continued by this
+          coroutine.
+
+          auto suspended_data =
+              continuation_data::create_data(suspended_handle);
+          handle.set_next(std::move(suspended_data));
+          */
+          /*
+          Here we delete the suspended handle. It will delete its extension but
+          it is ok, while during final_suspend it moves it into the coroutine
+          frame. And we are right now in that coroutine frame and just about to
+          run the coroutine.
+           */
+          if (destroy_suspended_handle)
           {
-            CF_PROFILE_SCOPE_N("handle not empty");
-            assert(handle.coro.done() == false &&
-                   "The final coroutine shouldn't be done already.");
-            assert(
-                suspended_handle.done() &&
-                "The final handle will not continue the suspended handle. Thus "
-                "we expect that it is already finished, but not destroyed.");
-
-            CF_ATTACH_NOTE("suspended_handle: ", suspended_handle.address());
-            CF_ATTACH_NOTE("handle: ", handle.coro.address());
-            /*
-            Do not store continuation here. This is a final coroutine. It
-            means that the suspended handle won't be continued by this
-            coroutine.
-
-            auto suspended_data =
-                continuation_data::create_data(suspended_handle);
-            handle.set_next(std::move(suspended_data));
-            */
-            auto coro = handle.coro;
-            handle.clear();
-            return coro;
+            suspended_handle.destroy();
           }
-          else
-          {
-            CF_PROFILE_SCOPE_N("NOOP");
-
-            return std::noop_coroutine();
-          }
+          auto coro = handle.coro;
+          // who gonna destroy coro?
+          continue with this question return coro;
         }
     };
 
@@ -81,6 +97,39 @@ class final_coroutine_t
 struct final_coroutine_t::promise_t
 {
     continuation_data next;
+    bool fall_through{ false };
+
+    promise_t()
+    {
+      CF_PROFILE_SCOPE_N("final_coroutine_t::promise_t::promise_t");
+      CF_ATTACH_NOTE("this", this);
+      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+    }
+    template <typename T, typename... Args>
+    promise_t(T&, fall_through_t, Args&&...) noexcept
+        : fall_through(true)
+    {
+      CF_PROFILE_SCOPE_N(
+          "final_coroutine_t::promise_t::promise_t[fall_through]");
+      CF_ATTACH_NOTE("this", this);
+      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+    }
+    template <typename... Args>
+    promise_t(fall_through_t, Args&&...) noexcept
+        : fall_through(true)
+    {
+      CF_PROFILE_SCOPE_N(
+          "final_coroutine_t::promise_t::promise_t[fall_through]");
+      CF_ATTACH_NOTE("this", this);
+      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+    }
+
+    ~promise_t()
+    {
+      CF_PROFILE_SCOPE();
+      CF_ATTACH_NOTE("this", this);
+      TEST_INJECTION(testing::test_injection_points_t::object__destruct, this);
+    }
     final_coroutine_t get_return_object()
     {
       return final_coroutine_t(handle_t::from_promise(*this));
@@ -90,13 +139,14 @@ struct final_coroutine_t::promise_t
     void set_next(continuation_data&& value) { next = std::move(value); }
 
     std::suspend_always initial_suspend() { return {}; }
-    awaiter_t final_suspend() noexcept { return { std::exchange(next, {}) }; }
+    final_awaiter final_suspend() noexcept { return { fall_through }; }
     void return_void() {}
     void unhandled_exception() { std::abort(); }
 };
 final_coroutine_t::awaiter_t final_coroutine_t::operator co_await() noexcept
 {
-  return { continuation_data::create_data(m_handle) };
+  return { .handle = continuation_data::create_data(m_handle),
+           .destroy_suspended_handle = m_handle.promise().fall_through };
 }
 
 } // namespace coroutine_flow::__details

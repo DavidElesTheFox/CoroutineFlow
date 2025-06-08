@@ -15,7 +15,10 @@ enum class test_injection_points_t
   task__await_suspend__after_test_and_set,
 
   task__run_async__async_call_finished,
-  task__run_async__before_test_and_set
+  task__run_async__before_test_and_set,
+
+  object__construct,
+  object__destruct
 };
 
 #if CF_ENABLE_INJECTIONS
