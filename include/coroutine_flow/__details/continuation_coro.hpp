@@ -76,9 +76,14 @@ class final_coroutine_t
           {
             suspended_handle.destroy();
           }
+          else
+          {
+            // ensure that current coroutine is destroyed
+            suspended_handle.promise().set_finalizer(handle.coro);
+          }
           auto coro = handle.coro;
           // who gonna destroy coro?
-          continue with this question return coro;
+          return coro;
         }
     };
 
@@ -142,6 +147,12 @@ struct final_coroutine_t::promise_t
     final_awaiter final_suspend() noexcept { return { fall_through }; }
     void return_void() {}
     void unhandled_exception() { std::abort(); }
+
+    void set_finalizer(std::coroutine_handle<>)
+    {
+      assert(false && "Final coroutine should be the final and never a "
+                      "suspended coroutine");
+    }
 };
 final_coroutine_t::awaiter_t final_coroutine_t::operator co_await() noexcept
 {

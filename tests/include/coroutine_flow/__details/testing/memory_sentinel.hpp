@@ -70,7 +70,7 @@ class memory_sentinel_t
       auto& entries = m_memory_map[object];
       if (entries.empty() == false)
       {
-        if (entries.back().destruction_info != std::nullopt)
+        if (entries.back().destruction_info == std::nullopt)
         {
           m_errors.emplace_back(
               "Memory leak detected. Object is not destroyed.",

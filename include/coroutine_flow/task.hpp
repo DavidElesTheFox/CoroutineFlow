@@ -113,6 +113,8 @@ namespace __details
       std::atomic_flag result_stored;
       std::atomic_flag suspended_handle_resumed;
 
+      std::coroutine_handle<> finalizer;
+
       std::function<void(std::function<void()>)> schedule_callback;
       __details::coroutine_chain_t<task_promise_t> coroutine_chain;
 
@@ -132,6 +134,10 @@ namespace __details
         CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
         TEST_INJECTION(testing::test_injection_points_t::object__destruct,
                        this);
+        if (finalizer)
+        {
+          finalizer.destroy();
+        }
       }
 
       __details::continuation_data& get_next()
@@ -142,7 +148,7 @@ namespace __details
       {
         coroutine_chain.set_next(std::move(next));
       }
-
+      void set_finalizer(std::coroutine_handle<> value) { finalizer = value; }
       __details::coroutine_chain_t<task_promise_t>& get_coroutine_chain()
       {
         return coroutine_chain;
@@ -405,9 +411,27 @@ class task
     {
       auto handle = std::move(*this).schedule(scheduler, false);
       assert(m_result_future.valid());
-      auto result = m_result_future.get();
-      handle.destroy();
-      return result;
+
+      try
+      {
+        if constexpr (std::movable<T>)
+        {
+          auto result = std::move(m_result_future.get());
+          handle.destroy();
+          return std::move(result);
+        }
+        else
+        {
+          auto result = m_result_future.get();
+          handle.destroy();
+          return result;
+        }
+      }
+      catch (...)
+      {
+        handle.destroy();
+        std::rethrow_exception(std::current_exception());
+      }
     }
 
   private:
@@ -441,7 +465,7 @@ class task
 
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
-    std::shared_future<T> m_result_future;
+    std::future<T> m_result_future;
 };
 
 template <typename T>

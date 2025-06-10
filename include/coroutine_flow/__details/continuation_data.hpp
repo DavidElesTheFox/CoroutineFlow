@@ -5,12 +5,14 @@
 
 namespace coroutine_flow::__details
 {
-
+class final_coroutine_t;
 struct continuation_data;
+
 template <typename T>
 concept continuable_promise = requires(T promise, continuation_data data) {
   { promise.set_next(std::move(data)) };
   { promise.get_next() } -> std::same_as<continuation_data&>;
+  { promise.set_finalizer(std::declval<std::coroutine_handle<>>()) };
 };
 
 struct continuation_data
