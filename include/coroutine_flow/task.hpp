@@ -14,6 +14,7 @@
 #include <expected>
 #include <functional>
 #include <future>
+#include <iostream>
 
 namespace coroutine_flow
 {
@@ -76,7 +77,8 @@ namespace __details
       }
       static final_coroutine_t skip(result_as_promise_t&& extension)
       {
-        co_return extension();
+        extension();
+        co_return;
       }
 
     private:
@@ -402,44 +404,18 @@ class task
     {
       std::move(*this).schedule(scheduler, true);
     }
-
-    template <typename scheduler_t>
+    template <typename U, typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    T sync_wait(scheduler_t scheduler) &&
-    {
-      auto handle = std::move(*this).schedule(scheduler, false);
-      assert(m_result_future.valid());
-
-      try
-      {
-        if constexpr (std::movable<T>)
-        {
-          auto result = std::move(m_result_future.get());
-          handle.destroy();
-          return std::move(result);
-        }
-        else
-        {
-          auto result = m_result_future.get();
-          handle.destroy();
-          return result;
-        }
-      }
-      catch (...)
-      {
-        handle.destroy();
-        std::rethrow_exception(std::current_exception());
-      }
-    }
+    friend U sync_wait(task<U>&& task, scheduler_t scheduler);
 
   private:
     template <typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    handle_t schedule(scheduler_t scheduler, bool destroy_handle) &&
+    handle_t schedule(scheduler_t scheduler, bool destroy_handle)
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
@@ -468,6 +444,38 @@ class task
     std::future<T> m_result_future;
 };
 
+template <typename T, typename scheduler_t>
+  requires(
+      std::copyable<scheduler_t> &&
+      is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
+T sync_wait(task<T>&& task, scheduler_t scheduler)
+{
+  auto handle = task.schedule(scheduler, false);
+  assert(task.m_result_future.valid());
+
+  try
+  {
+    if constexpr (std::movable<T>)
+    {
+      auto result = std::move(task.m_result_future.get());
+      std::cout << "WAT: " << handle.address() << std::endl;
+      handle.destroy();
+      return std::move(result);
+    }
+    else
+    {
+      auto result = task.m_result_future.get();
+      handle.destroy();
+      return result;
+    }
+  }
+  catch (...)
+  {
+    handle.destroy();
+    std::rethrow_exception(std::current_exception());
+  }
+}
+
 template <typename T>
 template <__details::coroutine_chain_holder other_promise_t>
 task<T>::awaiter_t<other_promise_t> task<T>::run_async(
@@ -476,6 +484,7 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
 {
   using injection_point = __details::testing::test_injection_points_t;
   CF_PROFILE_SCOPE();
+  m_coro_handle.promise().destroy_handle = true;
 
   get_promise().schedule_callback = schedule_callback;
   suspended_promise->suspended_handle_resumed.clear();

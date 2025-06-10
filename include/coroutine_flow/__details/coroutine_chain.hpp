@@ -8,6 +8,7 @@
 #include <coroutine>
 #include <exception>
 #include <functional>
+#include <iostream>
 #include <optional>
 #include <utility>
 
@@ -55,13 +56,29 @@ class coroutine_chain_t
       std::atomic_thread_fence(std::memory_order_acquire);
 
       auto suspended_handle = reset_suspended_handle();
+      const bool destroy_suspended_handle =
+          suspended_handle.value().promise().destroy_handle;
       suspended_handle.value().resume();
+      /* WARNING:
+       here suspended handle might destroyed (by sync_wait).
+       But even done() return true or false it doesn't causes any issues whike
+       it is not refenced later on due to the destroy_suspended_handle variable.
+       */
       if (suspended_handle->done() == false)
       {
         return;
       }
       std::vector<std::coroutine_handle<>> handles_to_destroy;
-      handles_to_destroy.push_back(*suspended_handle);
+      /*
+      We need to destroy the suspended handle. This might be the top level
+      coroutine when run_async is called and it will ensure that we destroying
+      the promise. But it also can be the top level coroutine if sync_wait is
+      called, but in this case this value is false.
+      */
+      if (destroy_suspended_handle)
+      {
+        handles_to_destroy.push_back(*suspended_handle);
+      }
       auto destroy_suspended_at_end =
           scope_exit_t{ [&]() noexcept
                         {

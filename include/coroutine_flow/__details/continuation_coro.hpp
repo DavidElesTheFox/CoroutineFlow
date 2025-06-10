@@ -82,7 +82,6 @@ class final_coroutine_t
             suspended_handle.promise().set_finalizer(handle.coro);
           }
           auto coro = handle.coro;
-          // who gonna destroy coro?
           return coro;
         }
     };

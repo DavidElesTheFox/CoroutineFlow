@@ -101,7 +101,7 @@ SCENARIO("smart await")
       THEN("During execute everything should be called")
       {
         simple_thread_pool thread_pool;
-        coro_A().sync_wait(&thread_pool);
+        cf::sync_wait(coro_A(), &thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
         SUCCEED(
@@ -159,7 +159,7 @@ SCENARIO("smart await")
       THEN("During execute everything should be called")
       {
         simple_thread_pool thread_pool;
-        coro_A().sync_wait(&thread_pool);
+        cf::sync_wait(coro_A(), &thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
         SUCCEED(
