@@ -13,6 +13,7 @@ concept continuable_promise = requires(T promise, continuation_data data) {
   { promise.set_next(std::move(data)) };
   { promise.get_next() } -> std::same_as<continuation_data&>;
   { promise.set_finalizer(std::declval<std::coroutine_handle<>>()) };
+  { promise.has_external_reference() } -> std::convertible_to<bool>;
 };
 
 struct continuation_data
@@ -20,8 +21,10 @@ struct continuation_data
     std::coroutine_handle<> coro;
     std::move_only_function<void(continuation_data) noexcept> set_next;
     std::move_only_function<continuation_data&() noexcept> get_next;
+    bool external_referenced{ false };
 
     bool is_empty() const { return set_next == nullptr; }
+    bool has_external_reference() const noexcept { return external_referenced; }
     void clear()
     {
       set_next = nullptr;
@@ -35,6 +38,7 @@ struct continuation_data
     {
       continuation_data result;
       result.coro = handler;
+      result.external_referenced = handler.promise().has_external_reference();
       result.set_next = [=](continuation_data continuation_data) noexcept
       {
         other_promise_type& promise = handler.promise();

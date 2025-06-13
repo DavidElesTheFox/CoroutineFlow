@@ -102,6 +102,8 @@ struct final_coroutine_t::promise_t
 {
     continuation_data next;
     bool fall_through{ false };
+    // final coroutine should never be referenced externally
+    bool has_external_reference() const noexcept { return false; }
 
     promise_t()
     {

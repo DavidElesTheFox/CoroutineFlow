@@ -14,7 +14,6 @@
 #include <expected>
 #include <functional>
 #include <future>
-#include <iostream>
 
 namespace coroutine_flow
 {
@@ -122,7 +121,7 @@ namespace __details
 
       __details::result_as_promise_t<T> extension;
       bool execute_extension{ false };
-      bool destroy_handle{ false };
+      bool external_referenced{ true };
 #if CF_ENABLE_INJECTIONS
       task_promise_t()
       {
@@ -150,6 +149,11 @@ namespace __details
       {
         coroutine_chain.set_next(std::move(next));
       }
+
+      bool has_external_reference() const noexcept
+      {
+        return external_referenced;
+      }
       void set_finalizer(std::coroutine_handle<> value) { finalizer = value; }
       __details::coroutine_chain_t<task_promise_t>& get_coroutine_chain()
       {
@@ -168,6 +172,7 @@ namespace __details
       auto final_suspend() noexcept
       {
         CF_PROFILE_SCOPE();
+        const bool destroy_handle = external_referenced == false;
         CF_ATTACH_NOTE("destroy handle", destroy_handle);
         if (execute_extension)
         {
@@ -402,7 +407,8 @@ class task
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
     void run_async(scheduler_t scheduler) &&
     {
-      std::move(*this).schedule(scheduler, true);
+      constexpr const bool keep_handle_alive = false;
+      std::move(*this).schedule(scheduler, keep_handle_alive);
     }
     template <typename U, typename scheduler_t>
       requires(
@@ -415,7 +421,7 @@ class task
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    handle_t schedule(scheduler_t scheduler, bool destroy_handle)
+    handle_t schedule(scheduler_t scheduler, bool keep_handle_alive)
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
@@ -425,7 +431,7 @@ class task
         tag_invoke(schedule_task_t{}, p_scheduler, std::move(task_call));
       };
       m_coro_handle.promise().execute_extension = true;
-      m_coro_handle.promise().destroy_handle = destroy_handle;
+      m_coro_handle.promise().external_referenced = keep_handle_alive;
       m_result_future =
           m_coro_handle.promise().extension.result_promise->get_future();
       tag_invoke(schedule_task_t{},
@@ -450,7 +456,9 @@ template <typename T, typename scheduler_t>
       is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
 T sync_wait(task<T>&& task, scheduler_t scheduler)
 {
-  auto handle = task.schedule(scheduler, false);
+  constexpr const bool keep_handle_alive = true;
+
+  auto handle = task.schedule(scheduler, keep_handle_alive);
   assert(task.m_result_future.valid());
 
   try
@@ -458,15 +466,14 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
     if constexpr (std::movable<T>)
     {
       auto result = std::move(task.m_result_future.get());
-      std::cout << "WAT: " << handle.address() << std::endl;
       handle.destroy();
       return std::move(result);
     }
     else
     {
-      auto result = task.m_result_future.get();
+      T result = task.m_result_future.get();
       handle.destroy();
-      return result;
+      return { result };
     }
   }
   catch (...)
@@ -484,7 +491,7 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
 {
   using injection_point = __details::testing::test_injection_points_t;
   CF_PROFILE_SCOPE();
-  m_coro_handle.promise().destroy_handle = true;
+  m_coro_handle.promise().external_referenced = false;
 
   get_promise().schedule_callback = schedule_callback;
   suspended_promise->suspended_handle_resumed.clear();

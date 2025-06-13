@@ -15,6 +15,8 @@ using test_injection_dispatcher_t =
 using cf::__details::testing::simple_thread_pool;
 using cf::__details::testing::test_exception_t;
 
+// TODO: test case: sync_wait destroys coroutine and then
+// suspended_handle_continued called.
 namespace
 {
 void register_flow_control_for(points_t point,

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <format>
-#include <iostream>
 #include <mutex>
 #include <shared_mutex>
 #include <stacktrace>
@@ -87,7 +86,6 @@ class memory_sentinel_t
     void on_destruct(void* object,
                      std::stacktrace location = std::stacktrace::current())
     {
-      std::cout << "Object destroy: " << object << std::endl;
       std::unique_lock lock{ m_memory_map_mutex };
       auto& entries = m_memory_map[object];
       if (entries.empty())

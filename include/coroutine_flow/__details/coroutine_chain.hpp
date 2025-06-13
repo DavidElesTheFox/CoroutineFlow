@@ -8,7 +8,6 @@
 #include <coroutine>
 #include <exception>
 #include <functional>
-#include <iostream>
 #include <optional>
 #include <utility>
 
@@ -57,7 +56,7 @@ class coroutine_chain_t
 
       auto suspended_handle = reset_suspended_handle();
       const bool destroy_suspended_handle =
-          suspended_handle.value().promise().destroy_handle;
+          suspended_handle.value().promise().external_referenced == false;
       suspended_handle.value().resume();
       /* WARNING:
        here suspended handle might destroyed (by sync_wait).
@@ -98,7 +97,15 @@ class coroutine_chain_t
         if (current.coro.done())
         {
           CF_ATTACH_NOTE("Is done");
-          handles_to_destroy.push_back(current.coro);
+          /*
+          When exception occurred it can be that the continued coroutine the
+          highest level coroutine and we would like to keep alive it in case of
+          sync wait
+          */
+          if (current.has_external_reference() == false)
+          {
+            handles_to_destroy.push_back(current.coro);
+          }
           current = std::exchange(current.get_next(), {});
         }
         else

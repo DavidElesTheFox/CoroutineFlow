@@ -4,8 +4,6 @@
 #include <coroutine_flow/__details/testing/execution_flow_controller.hpp>
 #include <coroutine_flow/profiler.hpp>
 
-#include <iostream>
-
 namespace cf = coroutine_flow;
 
 enum class test_points
