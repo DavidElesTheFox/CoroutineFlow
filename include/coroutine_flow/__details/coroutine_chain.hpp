@@ -58,14 +58,16 @@ class coroutine_chain_t
       const bool destroy_suspended_handle =
           suspended_handle.value().promise().external_referenced == false;
       suspended_handle.value().resume();
-      /* WARNING:
-       here suspended handle might destroyed (by sync_wait).
-       But even done() return true or false it doesn't causes any issues whike
-       it is not refenced later on due to the destroy_suspended_handle variable.
-       */
+
       if (suspended_handle->done() == false)
       {
         return;
+      }
+
+      {
+        auto& suspended_promise = suspended_handle.value().promise();
+        suspended_promise.internal_referenced.clear(std::memory_order_release);
+        suspended_promise.internal_referenced.notify_all();
       }
       std::vector<std::coroutine_handle<>> handles_to_destroy;
       /*

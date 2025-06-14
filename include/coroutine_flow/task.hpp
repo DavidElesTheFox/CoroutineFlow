@@ -121,7 +121,35 @@ namespace __details
 
       __details::result_as_promise_t<T> extension;
       bool execute_extension{ false };
+      /**
+       * When the promise is externally referenced during the final suspend
+       * it won't let fall through the final_coroutine (the extension). Thus,
+       * the hanlde and the promise will be still alive and can be referenced
+       * after the execution is finished.
+       *
+       * When it is false the promise will be destroyed when the exection is
+       * finished. It is done by the final coroutine which is let fall_through
+       * and when the final coroutine is allowed to fall through it destroys the
+       * suspended coroutine (this)
+       */
       bool external_referenced{ true };
+      /**
+       * coroutine chain always checks whether the suspended handle is done or
+       * not. Even if it externall referenced it does this check, but it can be
+       * that at that time the coroutine handle (and its promise) already
+       * destroyed externally (by the sync wait.). Although, it doesn't
+       * necessary means that it is a crash it is an undefined behaviour, that
+       * might lead to a crash.
+       *
+       * This flag tells to the external user whether this promise is still
+       * referenced and used or not. Thus, it can be checked before destroy.
+       *
+       * By default it is false, because initially it is not part of any
+       * coroutine chain. The chain is created when the task is co_awaited, so
+       * when run_async is called. It becomes unreferenced when the done() flag
+       * is checked by the chain.
+       */
+      std::atomic_flag internal_referenced{ false };
 #if CF_ENABLE_INJECTIONS
       task_promise_t()
       {
@@ -466,12 +494,17 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
     if constexpr (std::movable<T>)
     {
       auto result = std::move(task.m_result_future.get());
+      handle.promise().internal_referenced.wait(true,
+                                                std::memory_order_acquire);
+
       handle.destroy();
       return std::move(result);
     }
     else
     {
       T result = task.m_result_future.get();
+      handle.promise().internal_referenced.wait(true,
+                                                std::memory_order_acquire);
       handle.destroy();
       return { result };
     }
@@ -495,6 +528,8 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
 
   get_promise().schedule_callback = schedule_callback;
   suspended_promise->suspended_handle_resumed.clear();
+  suspended_promise->internal_referenced.test_and_set(
+      std::memory_order_release);
   schedule_callback(
       [p_coro_handle = m_coro_handle,
        p_this_ptr = this,

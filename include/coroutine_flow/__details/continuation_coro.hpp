@@ -101,6 +101,12 @@ class final_coroutine_t
 struct final_coroutine_t::promise_t
 {
     continuation_data next;
+    /**
+     * When this is true the final_coroutine will fall through and it will
+     * destroy automatically this promise. Also, it will propagate the suspended
+     * handle and it will destroy the suspended coroutine (the extension) as
+     * well.
+     */
     bool fall_through{ false };
     // final coroutine should never be referenced externally
     bool has_external_reference() const noexcept { return false; }
