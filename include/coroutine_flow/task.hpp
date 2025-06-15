@@ -31,13 +31,13 @@ namespace __details
 #if CF_ENABLE_INJECTIONS
       result_as_promise_t()
       {
-        TEST_INJECTION(testing::test_injection_points_t::object__construct,
-                       this);
+        CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                          this);
       }
       ~result_as_promise_t()
       {
-        TEST_INJECTION(testing::test_injection_points_t::object__destruct,
-                       this);
+        CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
+                          this);
       }
 #endif
       result_as_promise_t(result_as_promise_t&&) = default;
@@ -153,16 +153,16 @@ namespace __details
 #if CF_ENABLE_INJECTIONS
       task_promise_t()
       {
-        TEST_INJECTION(testing::test_injection_points_t::object__construct,
-                       this);
+        CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                          this);
       }
 #endif
       ~task_promise_t()
       {
         CF_PROFILE_SCOPE();
         CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
-        TEST_INJECTION(testing::test_injection_points_t::object__destruct,
-                       this);
+        CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
+                          this);
         if (finalizer)
         {
           finalizer.destroy();
@@ -308,8 +308,8 @@ namespace __details
       {
         using injection_point = __details::testing::test_injection_points_t;
         CF_PROFILE_SCOPE();
-        TEST_INJECTION(injection_point::task__await_ready__begin,
-                       suspended_handle.address());
+        CF_TEST_INJECTION(injection_point::task__await_ready__begin,
+                          suspended_handle.address());
 
         if (current_handle.done())
         {
@@ -321,8 +321,9 @@ namespace __details
           was_not_suspended = has_been_resumed == false;
 
           CF_ATTACH_NOTE("Do we suspend now? ", was_not_suspended);
-          TEST_INJECTION(injection_point::task__await_ready__after_test_and_set,
-                         suspended_handle.address());
+          CF_TEST_INJECTION(
+              injection_point::task__await_ready__after_test_and_set,
+              suspended_handle.address());
 
           return was_not_suspended;
         }
@@ -371,7 +372,7 @@ namespace __details
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acquire);
           CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
-          TEST_INJECTION(
+          CF_TEST_INJECTION(
               injection_point::task__await_suspend__after_test_and_set,
               suspended_handle.address());
           if (has_been_resumed == false)
@@ -412,8 +413,9 @@ class task
     {
       CF_PROFILE_SCOPE();
       using injection_point = __details::testing::test_injection_points_t;
-      TEST_INJECTION(injection_point::task__constructor, coro_handle.address());
-      TEST_INJECTION(injection_point::object__construct, this);
+      CF_TEST_INJECTION(injection_point::task__constructor,
+                        coro_handle.address());
+      CF_TEST_INJECTION(injection_point::object__construct, this);
     }
 
     void* address() { return m_coro_handle.address(); }
@@ -424,7 +426,7 @@ class task
       {
         m_coro_handle.destroy();
       }
-      TEST_INJECTION(
+      CF_TEST_INJECTION(
           __details::testing::test_injection_points_t::object__destruct,
           this);
     }
@@ -496,29 +498,29 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
     if constexpr (std::movable<T>)
     {
       auto result = std::move(task.m_result_future.get());
-      TEST_INJECTION(__details::testing::test_injection_points_t::
-                         task__sync_wait__has_result,
-                     handle_address);
+      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                            task__sync_wait__has_result,
+                        handle_address);
       handle.promise().internal_referenced.wait(true,
                                                 std::memory_order_acquire);
       handle.destroy();
-      TEST_INJECTION(__details::testing::test_injection_points_t::
-                         task__sync_wait__handle_destroy,
-                     handle_address);
+      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                            task__sync_wait__handle_destroy,
+                        handle_address);
       return std::move(result);
     }
     else
     {
       T result = task.m_result_future.get();
-      TEST_INJECTION(__details::testing::test_injection_points_t::
-                         task__sync_wait__has_result,
-                     handle_address);
+      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                            task__sync_wait__has_result,
+                        handle_address);
       handle.promise().internal_referenced.wait(true,
                                                 std::memory_order_acquire);
       handle.destroy();
-      TEST_INJECTION(__details::testing::test_injection_points_t::
-                         task__sync_wait__handle_destroy,
-                     handle_address);
+      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                            task__sync_wait__handle_destroy,
+                        handle_address);
       return { result };
     }
   }
@@ -556,12 +558,12 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async(
                            .address());
 
         p_coro_handle();
-        TEST_INJECTION(injection_point::task__run_async__async_call_finished,
-                       p_coro_handle.address());
-        TEST_INJECTION(injection_point::task__run_async__before_test_and_set,
-                       std::coroutine_handle<other_promise_t>::from_promise(
-                           *p_suspended_promise)
-                           .address());
+        CF_TEST_INJECTION(injection_point::task__run_async__async_call_finished,
+                          p_coro_handle.address());
+        CF_TEST_INJECTION(injection_point::task__run_async__before_test_and_set,
+                          std::coroutine_handle<other_promise_t>::from_promise(
+                              *p_suspended_promise)
+                              .address());
         const bool suspended_is_not_suspended =
             p_suspended_promise->suspended_handle_resumed.test_and_set(
                 std::memory_order_acquire);

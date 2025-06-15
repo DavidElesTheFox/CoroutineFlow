@@ -58,9 +58,9 @@ class coroutine_chain_t
       const bool destroy_suspended_handle =
           suspended_handle.value().promise().external_referenced == false;
       suspended_handle.value().resume();
-      TEST_INJECTION(__details::testing::test_injection_points_t::
-                         task__run_async__after_resume_suspended,
-                     suspended_handle->address());
+      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                            task__run_async__after_resume_suspended,
+                        suspended_handle->address());
       if (suspended_handle->done() == false)
       {
         return;
@@ -72,9 +72,9 @@ class coroutine_chain_t
         auto& suspended_promise = suspended_handle.value().promise();
         suspended_promise.internal_referenced.clear(std::memory_order_release);
         suspended_promise.internal_referenced.notify_all();
-        TEST_INJECTION(__details::testing::test_injection_points_t::
-                           task__run_async__after_released_suspended,
-                       suspended_address);
+        CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                              task__run_async__after_released_suspended,
+                          suspended_address);
       }
       std::vector<std::coroutine_handle<>> handles_to_destroy;
       /*

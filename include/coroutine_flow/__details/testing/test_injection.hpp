@@ -59,11 +59,11 @@ class test_injection_dispatcher_t
         m_callbacks;
 };
 
-#define TEST_INJECTION(point, object)                                          \
+#define CF_TEST_INJECTION(point, object)                                       \
   ::coroutine_flow::__details::testing::test_injection_dispatcher_t::          \
       instance()                                                               \
           .touch(point, object)
 #else
-#define TEST_INJECTION(point, object)
+#define CF_TEST_INJECTION(point, object)
 #endif
 } // namespace coroutine_flow::__details::testing

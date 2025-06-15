@@ -115,7 +115,8 @@ struct final_coroutine_t::promise_t
     {
       CF_PROFILE_SCOPE_N("final_coroutine_t::promise_t::promise_t");
       CF_ATTACH_NOTE("this", this);
-      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+      CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                        this);
     }
     template <typename T, typename... Args>
     promise_t(T&, fall_through_t, Args&&...) noexcept
@@ -124,7 +125,8 @@ struct final_coroutine_t::promise_t
       CF_PROFILE_SCOPE_N(
           "final_coroutine_t::promise_t::promise_t[fall_through]");
       CF_ATTACH_NOTE("this", this);
-      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+      CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                        this);
     }
     template <typename... Args>
     promise_t(fall_through_t, Args&&...) noexcept
@@ -133,14 +135,16 @@ struct final_coroutine_t::promise_t
       CF_PROFILE_SCOPE_N(
           "final_coroutine_t::promise_t::promise_t[fall_through]");
       CF_ATTACH_NOTE("this", this);
-      TEST_INJECTION(testing::test_injection_points_t::object__construct, this);
+      CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
+                        this);
     }
 
     ~promise_t()
     {
       CF_PROFILE_SCOPE();
       CF_ATTACH_NOTE("this", this);
-      TEST_INJECTION(testing::test_injection_points_t::object__destruct, this);
+      CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
+                        this);
     }
     final_coroutine_t get_return_object()
     {
