@@ -491,21 +491,34 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
 
   try
   {
+    [[maybe_unused]]
+    auto* handle_address = handle.address();
     if constexpr (std::movable<T>)
     {
       auto result = std::move(task.m_result_future.get());
+      TEST_INJECTION(__details::testing::test_injection_points_t::
+                         task__sync_wait__has_result,
+                     handle_address);
       handle.promise().internal_referenced.wait(true,
                                                 std::memory_order_acquire);
-
       handle.destroy();
+      TEST_INJECTION(__details::testing::test_injection_points_t::
+                         task__sync_wait__handle_destroy,
+                     handle_address);
       return std::move(result);
     }
     else
     {
       T result = task.m_result_future.get();
+      TEST_INJECTION(__details::testing::test_injection_points_t::
+                         task__sync_wait__has_result,
+                     handle_address);
       handle.promise().internal_referenced.wait(true,
                                                 std::memory_order_acquire);
       handle.destroy();
+      TEST_INJECTION(__details::testing::test_injection_points_t::
+                         task__sync_wait__handle_destroy,
+                     handle_address);
       return { result };
     }
   }

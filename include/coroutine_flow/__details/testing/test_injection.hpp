@@ -17,6 +17,12 @@ enum class test_injection_points_t
   task__run_async__async_call_finished,
   task__run_async__before_test_and_set,
 
+  task__run_async__after_resume_suspended,
+  task__run_async__after_released_suspended,
+
+  task__sync_wait__has_result,
+  task__sync_wait__handle_destroy,
+
   object__construct,
   object__destruct
 };
