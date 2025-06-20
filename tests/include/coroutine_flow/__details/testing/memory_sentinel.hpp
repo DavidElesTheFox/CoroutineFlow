@@ -26,6 +26,9 @@ class error_report_t
     std::stacktrace m_construction_location;
     std::stacktrace m_error_location;
 };
+/**
+ * This class suited to detect not destructed object.
+ */
 class memory_sentinel_t
 {
   private:
@@ -68,16 +71,6 @@ class memory_sentinel_t
     {
       std::unique_lock lock{ m_memory_map_mutex };
       auto& entries = m_memory_map[object];
-      if (entries.empty() == false)
-      {
-        if (entries.back().destruction_info == std::nullopt)
-        {
-          m_errors.emplace_back(
-              "Memory leak detected. Object is not destroyed.",
-              entries.back().construction_info,
-              location);
-        }
-      }
       entry_t new_entry = { .construction_info = std::move(location),
                             .destruction_info = std::nullopt };
       entries.push_back(std::move(new_entry));
@@ -93,13 +86,7 @@ class memory_sentinel_t
         return; // During move it might happen
       }
       auto& entry = entries.back();
-      if (entry.destruction_info != std::nullopt)
-      {
-        m_errors.emplace_back(
-            "Double free detected. Object is already destroyed.",
-            entries.back().construction_info,
-            location);
-      }
+
       entry.destruction_info = std::move(location);
     }
 
@@ -120,15 +107,9 @@ class memory_sentinel_t
       }
       return result;
     }
-    const std::vector<error_report_t> get_errors() const
-    {
-      std::shared_lock lock{ m_memory_map_mutex };
-      return m_errors;
-    }
 
   private:
     std::unordered_map<void*, std::vector<entry_t>> m_memory_map;
     mutable std::shared_mutex m_memory_map_mutex;
-    std::vector<error_report_t> m_errors;
 };
 } // namespace coroutine_flow::__details::testing

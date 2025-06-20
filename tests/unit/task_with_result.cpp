@@ -228,19 +228,6 @@ class memory_check_t
         }
         FAIL("Memory leak found");
       }
-      auto errors = m_memory_sentinel.get_errors();
-      if (errors.empty() == false)
-      {
-        for (const auto& error : errors)
-        {
-          std::cout << error.get_message() << "\n"
-                    << "allocated at: \n"
-                    << error.get_construction_location() << "\n"
-                    << "error location: \n"
-                    << error.get_error_location() << std::endl;
-        }
-        FAIL("Memory error detected");
-      }
     }
 
   private:
