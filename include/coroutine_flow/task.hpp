@@ -294,7 +294,7 @@ namespace __details
   auto task_promise_t<T>::await_transform(task<U> task)
   {
     CF_PROFILE_SCOPE();
-    return task.run_async(schedule_callback, this);
+    return task.run_async_impl(schedule_callback, this);
   }
   template <typename T, coroutine_chain_holder other_promise_type>
   struct task_awaiter_t
@@ -435,10 +435,10 @@ class task
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    void run_async(scheduler_t scheduler) &&
+    friend void run_async(scheduler_t scheduler, task&& task)
     {
       constexpr const bool keep_handle_alive = false;
-      std::move(*this).schedule(scheduler, keep_handle_alive);
+      std::move(task).schedule(scheduler, keep_handle_alive);
     }
     template <typename U, typename scheduler_t>
       requires(
@@ -471,14 +471,24 @@ class task
     }
 
     template <__details::coroutine_chain_holder other_promise_t>
-    awaiter_t<other_promise_t>
-        run_async(std::function<void(std::function<void()>)> schedule_callback,
-                  other_promise_t* suspended_promise);
+    awaiter_t<other_promise_t> run_async_impl(
+        std::function<void(std::function<void()>)> schedule_callback,
+        other_promise_t* suspended_promise);
 
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
     std::future<T> m_result_future;
 };
+
+template <typename T, typename scheduler_t>
+  requires(
+      std::copyable<scheduler_t> &&
+      is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
+void run_async(scheduler_t scheduler, task<T>&& task)
+{
+  constexpr const bool keep_handle_alive = false;
+  std::move(task).schedule(scheduler, keep_handle_alive);
+}
 
 template <typename T, typename scheduler_t>
   requires(
@@ -533,7 +543,7 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
 
 template <typename T>
 template <__details::coroutine_chain_holder other_promise_t>
-task<T>::awaiter_t<other_promise_t> task<T>::run_async(
+task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
     std::function<void(std::function<void()>)> schedule_callback,
     other_promise_t* suspended_promise)
 {

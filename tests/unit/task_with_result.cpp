@@ -296,7 +296,7 @@ TEST_CASE("Neasted coroutine level 1", "[task]")
       p_called_event.trigger();
       co_return 1;
     };
-    coro_1().run_async(&thread_pool);
+    run_async(&thread_pool, coro_1());
 
     REQUIRE(called_token.is_triggered(c_test_case_timeout));
     handle_error(std::move(thread_pool));
@@ -335,7 +335,7 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
       co_return 2;
     };
 
-    coro_2().run_async(&thread_pool);
+    run_async(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -395,7 +395,7 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
       co_return 3;
     };
 
-    coro_3().run_async(&thread_pool);
+    run_async(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -466,7 +466,7 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
       co_return 4;
     };
 
-    coro_4().run_async(&thread_pool);
+    run_async(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -516,7 +516,7 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
       co_return 2;
     };
 
-    coro_2().run_async(&thread_pool);
+    run_async(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -600,7 +600,7 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
       co_return 3;
     };
 
-    coro_3().run_async(&thread_pool);
+    run_async(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -708,7 +708,7 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
       co_return 3;
     };
 
-    coro_4().run_async(&thread_pool);
+    run_async(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -759,7 +759,7 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
       co_return 2;
     };
 
-    coro_2().run_async(&thread_pool);
+    run_async(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -850,7 +850,7 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
       co_return 3;
     };
 
-    coro_3().run_async(&thread_pool);
+    run_async(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -973,7 +973,7 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
       co_return 3;
     };
 
-    coro_4().run_async(&thread_pool);
+    run_async(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -1030,7 +1030,7 @@ TEST_CASE("Mixed data", "[task]")
       co_return 2;
     };
 
-    coro_3().run_async(&thread_pool);
+    run_async(&thread_pool, coro_3());
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_3.is_triggered(c_test_case_timeout));

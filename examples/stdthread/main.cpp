@@ -43,7 +43,7 @@ int main()
   };
   std::cout << "[main] run_async()" << std::endl;
 
-  my_coro().run_async(scheduler);
+  run_async(scheduler, my_coro());
   std::this_thread::sleep_for(std::chrono::seconds{ 3 });
   return 0;
 }
