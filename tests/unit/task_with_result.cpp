@@ -3,6 +3,7 @@
  - Memory tests
 */
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <coroutine_flow/__details/testing/memory_sentinel.hpp>
@@ -235,6 +236,30 @@ class memory_check_t
 };
 
 constexpr const std::chrono::duration c_test_case_timeout = 1s;
+
+struct async_execution_policy_t
+{
+    template <typename scheduler_t, typename R>
+    auto run_task(scheduler_t scheduler, cf::task<R>&& task)
+    {
+      cf::run_async(std::move(task), scheduler);
+    }
+};
+
+struct sync_execution_policy_t
+{
+    template <typename scheduler_t, typename R>
+    auto run_task(scheduler_t scheduler, cf::task<R>&& task)
+    {
+      return cf::sync_wait(std::move(task), scheduler);
+    }
+};
+
+template <typename test_configuration>
+struct test_controller_t : test_configuration
+{
+};
+
 TEST_CASE("Check Destructor when not scheduled", "[task]")
 {
   memory_check_t memory_checker;
@@ -283,7 +308,11 @@ TEST_CASE("Check Destructor when scheduled", "[task]")
 
 #pragma region Execution Tests
 
-TEST_CASE("Neasted coroutine level 1", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 1",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   memory_check_t memory_checker;
   {
@@ -296,7 +325,7 @@ TEST_CASE("Neasted coroutine level 1", "[task]")
       p_called_event.trigger();
       co_return 1;
     };
-    run_async(&thread_pool, coro_1());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_1());
 
     REQUIRE(called_token.is_triggered(c_test_case_timeout));
     handle_error(std::move(thread_pool));
@@ -304,7 +333,11 @@ TEST_CASE("Neasted coroutine level 1", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 2", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 2",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   memory_check_t memory_checker;
   {
@@ -335,7 +368,7 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
       co_return 2;
     };
 
-    run_async(&thread_pool, coro_2());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -344,7 +377,11 @@ TEST_CASE("Neasted coroutine level 2", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 3", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 3",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   memory_check_t memory_checker;
   {
@@ -395,7 +432,7 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
       co_return 3;
     };
 
-    run_async(&thread_pool, coro_3());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -405,7 +442,11 @@ TEST_CASE("Neasted coroutine level 3", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 4", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 4",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   memory_check_t memory_checker;
   {
@@ -466,7 +507,7 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
       co_return 4;
     };
 
-    run_async(&thread_pool, coro_4());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -477,7 +518,11 @@ TEST_CASE("Neasted coroutine level 4", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 2; waits 2",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
@@ -516,7 +561,7 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
       co_return 2;
     };
 
-    run_async(&thread_pool, coro_2());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -527,7 +572,11 @@ TEST_CASE("Neasted coroutine level 2; waits 2", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 3; waits 2",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
@@ -600,7 +649,7 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
       co_return 3;
     };
 
-    run_async(&thread_pool, coro_3());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -613,7 +662,11 @@ TEST_CASE("Neasted coroutine level 3; waits 2", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 4; waits 2",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
@@ -708,7 +761,7 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
       co_return 3;
     };
 
-    run_async(&thread_pool, coro_4());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -723,7 +776,12 @@ TEST_CASE("Neasted coroutine level 4; waits 2", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 2; waits 3",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
+
 {
   memory_check_t memory_checker;
   {
@@ -759,7 +817,7 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
       co_return 2;
     };
 
-    run_async(&thread_pool, coro_2());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_2());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -769,7 +827,11 @@ TEST_CASE("Neasted coroutine level 2; waits 3", "[task]")
   }
   memory_checker.check();
 }
-TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 3; waits 3",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
@@ -850,7 +912,7 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
       co_return 3;
     };
 
-    run_async(&thread_pool, coro_3());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_3());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -863,7 +925,11 @@ TEST_CASE("Neasted coroutine level 3; waits 3", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Neasted coroutine level 4; waits 3",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
 
@@ -973,7 +1039,7 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
       co_return 3;
     };
 
-    run_async(&thread_pool, coro_4());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_4());
 
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
@@ -988,7 +1054,11 @@ TEST_CASE("Neasted coroutine level 4; waits 3", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Mixed data", "[task]")
+TEMPLATE_TEST_CASE_METHOD(test_controller_t,
+                          "Mixed data",
+                          "[task]",
+                          sync_execution_policy_t,
+                          async_execution_policy_t)
 {
   CF_PROFILE_SCOPE();
 
@@ -1030,7 +1100,7 @@ TEST_CASE("Mixed data", "[task]")
       co_return 2;
     };
 
-    run_async(&thread_pool, coro_3());
+    test_controller_t<TestType>::run_task(&thread_pool, coro_3());
     REQUIRE(called_token_1.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_2.is_triggered(c_test_case_timeout));
     REQUIRE(called_token_3.is_triggered(c_test_case_timeout));

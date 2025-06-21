@@ -182,6 +182,11 @@ namespace __details
       {
         return external_referenced;
       }
+      void internal_release() noexcept
+      {
+        internal_referenced.clear(std::memory_order_release);
+        internal_referenced.notify_all();
+      }
       void set_finalizer(std::coroutine_handle<> value) { finalizer = value; }
       __details::coroutine_chain_t<task_promise_t>& get_coroutine_chain()
       {
@@ -431,15 +436,12 @@ class task
           this);
     }
 
-    template <typename scheduler_t>
+    template <typename U, typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    friend void run_async(scheduler_t scheduler, task&& task)
-    {
-      constexpr const bool keep_handle_alive = false;
-      std::move(task).schedule(scheduler, keep_handle_alive);
-    }
+    friend void run_async(task<U>&& task, scheduler_t scheduler);
+
     template <typename U, typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
@@ -484,7 +486,7 @@ template <typename T, typename scheduler_t>
   requires(
       std::copyable<scheduler_t> &&
       is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-void run_async(scheduler_t scheduler, task<T>&& task)
+void run_async(task<T>&& task, scheduler_t scheduler)
 {
   constexpr const bool keep_handle_alive = false;
   std::move(task).schedule(scheduler, keep_handle_alive);

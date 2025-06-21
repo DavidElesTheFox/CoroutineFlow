@@ -153,6 +153,7 @@ struct final_coroutine_t::promise_t
 
     continuation_data& get_next() { return next; }
     void set_next(continuation_data&& value) { next = std::move(value); }
+    void internal_release() noexcept {};
 
     std::suspend_always initial_suspend() { return {}; }
     final_awaiter final_suspend() noexcept { return { fall_through }; }

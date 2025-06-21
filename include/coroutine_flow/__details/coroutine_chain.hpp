@@ -70,8 +70,7 @@ class coroutine_chain_t
         [[maybe_unused]]
         auto* suspended_address = suspended_handle.value().address();
         auto& suspended_promise = suspended_handle.value().promise();
-        suspended_promise.internal_referenced.clear(std::memory_order_release);
-        suspended_promise.internal_referenced.notify_all();
+        suspended_promise.internal_release();
         CF_TEST_INJECTION(__details::testing::test_injection_points_t::
                               task__run_async__after_released_suspended,
                           suspended_address);
@@ -115,7 +114,17 @@ class coroutine_chain_t
           {
             handles_to_destroy.push_back(current.coro);
           }
+          /*
+          It might be that in the chain not the first but the last item
+          is the most high level coroutine. In this case we need to let
+          know the sync_wait that it is internally not referenced
+          anymore.
+          */
+          // Store the release callback to avoid destroy before get_next call
+          auto release_callback =
+              std::exchange(current.internal_release, nullptr);
           current = std::exchange(current.get_next(), {});
+          release_callback();
         }
         else
         {
