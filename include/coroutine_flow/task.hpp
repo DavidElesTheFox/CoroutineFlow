@@ -357,8 +357,6 @@ namespace __details
 
         promise_t& promise = current_handle.promise();
         promise.result_stored.wait(false, std::memory_order_relaxed);
-        suspended_handle.promise().suspended_handle_resumed.clear();
-
         std::atomic_thread_fence(std::memory_order_acquire);
 
         auto result = std::move(promise.result);
