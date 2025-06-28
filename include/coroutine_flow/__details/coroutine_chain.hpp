@@ -158,7 +158,7 @@ class coroutine_chain_t
 
       m_suspended_handle = suspended_handle;
       std::atomic_thread_fence(std::memory_order_release);
-      m_suspended_handle_stored.test_and_set(std::memory_order_relaxed);
+      m_suspended_handle_stored.test_and_set(std::memory_order_release);
       m_suspended_handle_stored.notify_all();
     }
 };

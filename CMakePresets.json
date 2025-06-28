@@ -111,6 +111,16 @@
             }
         },
         {
+            "name": "dev-clang-undef-sanitizer",
+            "displayName": "Developement Config clang Undefined behavior sanitizer",
+            "description": "Developement build config with Undefined behavior sanitizer",
+            "inherits": "dev-clang",
+            "cacheVariables": {
+                "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=undefined",
+                "CF_LINK_OPTIONS": "-fsanitize=undefined"
+            }
+        },
+        {
             "name": "dev-clang-memory-sanitizer",
             "displayName": "Developement Config clang memory sanitizer",
             "description": "Developement build config with memory sanitizer",

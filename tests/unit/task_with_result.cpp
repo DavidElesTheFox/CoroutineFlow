@@ -6,6 +6,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <coroutine_flow/__details/testing/inline_scheduler.hpp>
 #include <coroutine_flow/__details/testing/memory_sentinel.hpp>
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 
@@ -20,6 +21,7 @@
 namespace cf = coroutine_flow;
 using namespace std::chrono_literals;
 
+using cf::__details::testing::inline_scheduler_t;
 using cf::__details::testing::simple_thread_pool;
 using cf::__details::testing::test_exception_t;
 
@@ -200,7 +202,9 @@ void handle_error(simple_thread_pool&& thread_pool)
   }
   FAIL("Error occurred in thread pool");
 }
-
+void handle_error(inline_scheduler_t&&)
+{
+}
 class memory_check_t
 {
   public:
@@ -240,7 +244,7 @@ constexpr const std::chrono::duration c_test_case_timeout = 1s;
 struct async_execution_policy_t
 {
     template <typename scheduler_t, typename R>
-    auto run_task(scheduler_t scheduler, cf::task<R>&& task)
+    auto run_task(scheduler_t* scheduler, cf::task<R>&& task)
     {
       cf::run_async(std::move(task), scheduler);
     }
@@ -249,18 +253,55 @@ struct async_execution_policy_t
 struct sync_execution_policy_t
 {
     template <typename scheduler_t, typename R>
-    auto run_task(scheduler_t scheduler, cf::task<R>&& task)
+    auto run_task(scheduler_t* scheduler, cf::task<R>&& task)
     {
       return cf::sync_wait(std::move(task), scheduler);
     }
 };
 
-template <typename test_configuration>
-struct test_controller_t : test_configuration
+struct std_thread_pool_policy_t
+{
+    auto create_scheduler() { return simple_thread_pool(); }
+};
+
+struct inline_scheduler_policy_t
+{
+    auto create_scheduler() { return inline_scheduler_t(); }
+};
+
+template <typename... Ts>
+struct union_of_t : Ts...
 {
 };
 
-TEST_CASE("Check Destructor when not scheduled", "[task]")
+using async_inline_configuration_t =
+    union_of_t<async_execution_policy_t, inline_scheduler_policy_t>;
+using async_pool_configuration_t =
+    union_of_t<async_execution_policy_t, std_thread_pool_policy_t>;
+
+using sync_inline_configuration_t =
+    union_of_t<sync_execution_policy_t, inline_scheduler_policy_t>;
+using sync_pool_configuration_t =
+    union_of_t<sync_execution_policy_t, std_thread_pool_policy_t>;
+
+struct base_test_case_t
+{
+    base_test_case_t()
+    {
+      cf::__details::testing::test_injection_dispatcher_t::instance().clear();
+    }
+};
+
+template <typename test_configuration>
+struct test_controller_t
+    : test_configuration
+    , base_test_case_t
+{
+};
+
+TEST_CASE_METHOD(base_test_case_t,
+                 "Check Destructor when not scheduled",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -274,7 +315,7 @@ TEST_CASE("Check Destructor when not scheduled", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Check Destructor when scheduled", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Check Destructor when scheduled", "[task]")
 {
   try
   {
@@ -311,12 +352,14 @@ TEST_CASE("Check Destructor when scheduled", "[task]")
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 1",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event, called_token] = Event::create("coroutine is called");
 
     auto coro_1 = [p_called_event =
@@ -336,12 +379,14 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 2",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event_1, called_token_1] =
         Event::create("coroutine 1 is called");
 
@@ -380,12 +425,14 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 3",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -445,12 +492,14 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 4",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -521,13 +570,15 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 2; waits 2",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event_1, called_token_1] =
         Event::create("coroutine 1 is called");
     std::atomic_uint32_t coro_1_call_count = 0;
@@ -575,13 +626,16 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 3; waits 2",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
+
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -665,14 +719,16 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 4; waits 2",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
   {
 
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -779,13 +835,15 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 2; waits 3",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 
 {
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event_1, called_token_1] =
         Event::create("coroutine 1 is called");
     std::atomic_uint32_t coro_1_call_count = 0;
@@ -830,13 +888,15 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 3; waits 3",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -928,14 +988,16 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Neasted coroutine level 4; waits 3",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   CF_PROFILE_SCOPE();
 
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
     auto [called_event_1, called_token_1] =
@@ -1057,14 +1119,16 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                           "Mixed data",
                           "[task]",
-                          sync_execution_policy_t,
-                          async_execution_policy_t)
+                          async_inline_configuration_t,
+                          async_pool_configuration_t,
+                          sync_inline_configuration_t,
+                          sync_pool_configuration_t)
 {
   CF_PROFILE_SCOPE();
 
   memory_check_t memory_checker;
   {
-    simple_thread_pool thread_pool;
+    auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event_1, called_token_1] =
         Event::create("coroutine 1 is called");
     auto [called_event_2, called_token_2] =
@@ -1112,7 +1176,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
 #pragma region Return Type test
 
-TEST_CASE("Non Copyable return type", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Non Copyable return type", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1159,7 +1223,7 @@ TEST_CASE("Non Moveable return type", "[task]")
   memory_checker.check();
 }
 */
-TEST_CASE("Reference return type", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Reference return type", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1187,7 +1251,7 @@ TEST_CASE("Reference return type", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Pointer return type", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Pointer return type", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1214,7 +1278,7 @@ TEST_CASE("Pointer return type", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Tuple return type", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Tuple return type", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1242,7 +1306,9 @@ TEST_CASE("Tuple return type", "[task]")
   }
   memory_checker.check();
 }
-TEST_CASE("Non default constructible return type", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Non default constructible return type",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1267,7 +1333,7 @@ TEST_CASE("Non default constructible return type", "[task]")
 
 #pragma region Exception Tests
 
-TEST_CASE("Coroutine with exception", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Coroutine with exception", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1284,7 +1350,9 @@ TEST_CASE("Coroutine with exception", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Coroutine with exception 2nd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Coroutine with exception 2nd level",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1320,7 +1388,9 @@ TEST_CASE("Coroutine with exception 2nd level", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Coroutine with exception 3rd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Coroutine with exception 3rd level",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1373,7 +1443,9 @@ TEST_CASE("Coroutine with exception 3rd level", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Coroutine with exception after co_await", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Coroutine with exception after co_await",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1397,7 +1469,9 @@ TEST_CASE("Coroutine with exception after co_await", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Coroutine with exception after co_await 2nd level",
+                 "[task]")
 {
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
@@ -1450,7 +1524,7 @@ TEST_CASE("Coroutine with exception after co_await 2nd level", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Exception during schedule", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Exception during schedule", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1465,7 +1539,9 @@ TEST_CASE("Exception during schedule", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Exception during schedule inside coroutine", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "Exception during schedule inside coroutine",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1485,7 +1561,7 @@ TEST_CASE("Exception during schedule inside coroutine", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("Exception during move", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Exception during move", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1501,7 +1577,7 @@ TEST_CASE("Exception during move", "[task]")
   }
   memory_checker.check();
 }
-TEST_CASE("Exception during move 2nd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Exception during move 2nd level", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1522,7 +1598,7 @@ TEST_CASE("Exception during move 2nd level", "[task]")
   }
   memory_checker.check();
 }
-TEST_CASE("No Exception during move assign", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "No Exception during move assign", "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1540,7 +1616,9 @@ TEST_CASE("No Exception during move assign", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("No Exception during move assign 2nd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "No Exception during move assign 2nd level",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1562,7 +1640,9 @@ TEST_CASE("No Exception during move assign 2nd level", "[task]")
   }
   memory_checker.check();
 }
-TEST_CASE("No Exception during movable class during copy", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "No Exception during movable class during copy",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1580,7 +1660,9 @@ TEST_CASE("No Exception during movable class during copy", "[task]")
   memory_checker.check();
 }
 
-TEST_CASE("No Exception during movable class during copy 2nd level", "[task]")
+TEST_CASE_METHOD(base_test_case_t,
+                 "No Exception during movable class during copy 2nd level",
+                 "[task]")
 {
   memory_check_t memory_checker;
   {
@@ -1635,7 +1717,7 @@ TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
 */
 #pragma endregion
 
-TEST_CASE("Check get function", "[task]")
+TEST_CASE_METHOD(base_test_case_t, "Check get function", "[task]")
 {
   memory_check_t memory_checker;
   {

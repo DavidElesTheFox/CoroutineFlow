@@ -3,7 +3,10 @@
 #include <coroutine_flow/lib_config.hpp>
 
 #include <functional>
+#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+
 namespace coroutine_flow::__details::testing
 {
 enum class test_injection_points_t
@@ -40,6 +43,7 @@ class test_injection_dispatcher_t
 
     void touch(test_injection_points_t point, void* object)
     {
+      std::shared_lock lock(m_callbacks_mutex);
       for (const auto& callback : m_callbacks[point])
       {
         callback(object);
@@ -49,11 +53,13 @@ class test_injection_dispatcher_t
     void register_callback(test_injection_points_t at,
                            std::function<void(void*)> callback)
     {
+      std::unique_lock lock(m_callbacks_mutex);
       m_callbacks[at].push_back(std::move(callback));
     }
     void clear() { m_callbacks.clear(); }
 
   private:
+    std::shared_mutex m_callbacks_mutex;
     std::unordered_map<test_injection_points_t,
                        std::vector<std::function<void(void*)>>>
         m_callbacks;

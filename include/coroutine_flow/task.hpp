@@ -113,6 +113,7 @@ namespace __details
       std::expected<std::optional<T>, std::exception_ptr> result;
       std::atomic_flag result_stored;
       std::atomic_flag suspended_handle_resumed;
+      std::atomic_flag suspend_started;
 
       std::coroutine_handle<> finalizer;
 
@@ -207,6 +208,7 @@ namespace __details
         CF_PROFILE_SCOPE();
         const bool destroy_handle = external_referenced == false;
         CF_ATTACH_NOTE("destroy handle", destroy_handle);
+
         if (execute_extension)
         {
           /*
@@ -215,36 +217,48 @@ namespace __details
           */
           if constexpr (std::movable<T>)
           {
+            auto owned_extension = std::move(extension);
+            auto owned_result = std::move(result);
+            internal_release();
             if (destroy_handle)
             {
-              return result_as_promise_t<T>::execute_on({},
-                                                        std::move(extension),
-                                                        std::move(result));
+              return result_as_promise_t<T>::execute_on(
+                  {},
+                  std::move(owned_extension),
+                  std::move(owned_result));
             }
             else
             {
-              return result_as_promise_t<T>::execute_on(std::move(extension),
-                                                        std::move(result));
+              return result_as_promise_t<T>::execute_on(
+                  std::move(owned_extension),
+                  std::move(owned_result));
             }
           }
           else
           {
+            auto owned_extension = std::move(extension);
+            auto owned_result = result;
+            internal_release();
             if (destroy_handle)
             {
-              return result_as_promise_t<T>::execute_on({},
-                                                        std::move(extension),
-                                                        result);
+              return result_as_promise_t<T>::execute_on(
+                  {},
+                  std::move(owned_extension),
+                  owned_result);
             }
             else
             {
-              return result_as_promise_t<T>::execute_on(std::move(extension),
-                                                        result);
+              return result_as_promise_t<T>::execute_on(
+                  std::move(owned_extension),
+                  owned_result);
             }
           }
         }
         else
         {
-          return result_as_promise_t<T>::skip(std::move(extension));
+          auto owned_extension = std::move(extension);
+          internal_release();
+          return result_as_promise_t<T>::skip(std::move(owned_extension));
         }
       }
 
@@ -307,7 +321,7 @@ namespace __details
       using promise_t = task_promise_t<T>;
       std::coroutine_handle<promise_t> current_handle;
       std::coroutine_handle<other_promise_type> suspended_handle;
-      bool was_not_suspended = false;
+      bool has_been_suspended = true;
 
       bool await_ready()
       {
@@ -320,34 +334,41 @@ namespace __details
         {
           CF_ATTACH_NOTE("async call is already finished");
 
-          const bool has_been_resumed =
+          const bool already_ready =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
-                  std::memory_order_acquire);
-          was_not_suspended = has_been_resumed == false;
-
-          CF_ATTACH_NOTE("Do we suspend now? ", was_not_suspended);
+                  std::memory_order_acq_rel);
+          // when we are saying: we are ready, it measn that we are not
+          // suspended
+          has_been_suspended = already_ready == false;
+          CF_ATTACH_NOTE("suspended handle is ready? ", already_ready);
           CF_TEST_INJECTION(
               injection_point::task__await_ready__after_test_and_set,
               suspended_handle.address());
 
-          return was_not_suspended;
+          return already_ready;
         }
         return false;
       }
       T await_resume()
       {
         CF_PROFILE_SCOPE();
-        CF_ATTACH_NOTE("caused async call a suspend? ", was_not_suspended);
+        CF_ATTACH_NOTE("caused async call a suspend? ", has_been_suspended);
         CF_ATTACH_NOTE("Async task: ", current_handle.address());
 
         promise_t& promise = current_handle.promise();
         promise.result_stored.wait(false, std::memory_order_relaxed);
+        suspended_handle.promise().suspended_handle_resumed.clear();
+
         std::atomic_thread_fence(std::memory_order_acquire);
 
         auto result = std::move(promise.result);
-        if (was_not_suspended)
+        if (has_been_suspended == false)
         {
-          current_handle.destroy();
+          promise.internal_release();
+          if (promise.external_referenced == false)
+          {
+            current_handle.destroy();
+          }
         }
         if (result.has_value())
         {
@@ -370,16 +391,19 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         using injection_point = __details::testing::test_injection_points_t;
+
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("Async call is finished");
+
+          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
-                  std::memory_order_acquire);
-          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
+                  std::memory_order_acq_rel);
           CF_TEST_INJECTION(
               injection_point::task__await_suspend__after_test_and_set,
               suspended_handle.address());
+
           if (has_been_resumed == false)
           {
             return false;
@@ -554,9 +578,12 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
   m_coro_handle.promise().external_referenced = false;
 
   get_promise().schedule_callback = schedule_callback;
+
   suspended_promise->suspended_handle_resumed.clear();
   suspended_promise->internal_referenced.test_and_set(
       std::memory_order_release);
+  suspended_promise->suspend_started.clear(std::memory_order_release);
+
   schedule_callback(
       [p_coro_handle = m_coro_handle,
        p_this_ptr = this,
@@ -576,10 +603,20 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
                           std::coroutine_handle<other_promise_t>::from_promise(
                               *p_suspended_promise)
                               .address());
-        const bool suspended_is_not_suspended =
+        /*
+        It is a tricky problem what if when this function call blocks the
+        co_await so it never start to awaiting, thus suspended never gonna be
+        stored. In this situation continue_suspended_handle() can't be called,
+        because it will be a deadlock. We need to say somehow that co_await is
+        really started. And when it is really started we can check weather the
+        suspended_handle resumed or not.
+        */
+        const bool suspended_is_resumed =
             p_suspended_promise->suspended_handle_resumed.test_and_set(
-                std::memory_order_acquire);
-        if (suspended_is_not_suspended)
+                std::memory_order_acq_rel);
+        const bool suspend_started = p_suspended_promise->suspend_started.test(
+            std::memory_order_acquire);
+        if (suspended_is_resumed || suspend_started == false)
         {
           CF_ATTACH_NOTE("suspended handle were not really suspended.");
           return;
@@ -587,7 +624,6 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
         if (p_coro_handle.done())
         {
           CF_PROFILE_ZONE(HandleDone, "Handle Done");
-
           auto destroy_coro_at_end =
               __details::scope_exit_t{ [&]() noexcept
                                        { p_coro_handle.destroy(); } };
@@ -601,10 +637,13 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
               p_coro_handle.promise().get_coroutine_chain());
         }
       });
+
   awaiter_t<other_promise_t> result;
   result.current_handle = std::exchange(m_coro_handle, {});
   result.suspended_handle =
       std::coroutine_handle<other_promise_t>::from_promise(*suspended_promise);
+
+  suspended_promise->suspend_started.test_and_set(std::memory_order_release);
   return result;
 }
 
