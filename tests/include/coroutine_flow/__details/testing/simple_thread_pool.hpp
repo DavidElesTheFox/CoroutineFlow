@@ -4,17 +4,20 @@
 #include <coroutine_flow/profiler.hpp>
 #include <coroutine_flow/task.hpp>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <functional>
 #include <list>
+#include <sstream>
 #include <thread>
 
 namespace coroutine_flow::__details::testing
 {
-class simple_thread_pool
+class simple_thread_pool_t
 {
   public:
     friend void tag_invoke(coroutine_flow::schedule_task_t,
-                           simple_thread_pool* pool,
+                           simple_thread_pool_t* pool,
                            std::function<void()> callback)
     {
       auto check_and_throw = [&](uint32_t limit) -> std::optional<int>
@@ -32,7 +35,7 @@ class simple_thread_pool
       pool->m_threads.emplace_back(
           [p_pool = pool, p_callback = callback](std::stop_token stop_token)
           {
-            CF_PROFILE_SCOPE_N("simple_thread_pool::tag_invoke::schedule");
+            CF_PROFILE_SCOPE_N("simple_thread_pool_t::tag_invoke::schedule");
             try
             {
               if (stop_token.stop_requested())
@@ -47,14 +50,14 @@ class simple_thread_pool
             }
           });
     }
-    simple_thread_pool() = default;
-    simple_thread_pool(const simple_thread_pool&) = delete;
-    simple_thread_pool(simple_thread_pool&&) = delete;
+    simple_thread_pool_t() = default;
+    simple_thread_pool_t(const simple_thread_pool_t&) = delete;
+    simple_thread_pool_t(simple_thread_pool_t&&) = delete;
 
-    simple_thread_pool& operator=(const simple_thread_pool&) = delete;
-    simple_thread_pool& operator=(simple_thread_pool&&) = delete;
+    simple_thread_pool_t& operator=(const simple_thread_pool_t&) = delete;
+    simple_thread_pool_t& operator=(simple_thread_pool_t&&) = delete;
 
-    ~simple_thread_pool()
+    ~simple_thread_pool_t()
     {
       request_stop();
       for (auto& thread : m_threads)
@@ -93,4 +96,27 @@ class simple_thread_pool
     std::mutex m_errors_mutex;
     std::vector<std::exception_ptr> m_errors;
 };
+void handle_error(simple_thread_pool_t&& thread_pool)
+{
+  std::vector<std::exception_ptr> errors = thread_pool.clear_errors();
+  if (errors.empty())
+  {
+    return;
+  }
+  std::ostringstream os;
+  os << "Error count: " << errors.size() << std::endl;
+  for (std::exception_ptr ex : errors)
+  {
+    try
+    {
+      std::rethrow_exception(ex);
+    }
+    catch (const std::exception& e)
+    {
+      os << "Error: " << e.what() << std::endl;
+    }
+  }
+  FAIL("Error occurred in thread pool" + os.str());
+}
+
 } // namespace coroutine_flow::__details::testing

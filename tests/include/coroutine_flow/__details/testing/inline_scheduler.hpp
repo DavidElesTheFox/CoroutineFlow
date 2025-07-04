@@ -14,5 +14,7 @@ void tag_invoke(coroutine_flow::schedule_task_t,
 {
   callback();
 }
-
+void handle_error(inline_scheduler_t&&)
+{
+}
 } // namespace coroutine_flow::__details::testing

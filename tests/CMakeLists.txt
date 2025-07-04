@@ -50,12 +50,21 @@ add_testcase(
     SOURCES unit/tag_invoke.cpp
 )
 add_testcase(
-    TEST_NAME unit.task_with_result
-    SOURCES unit/task_with_result.cpp
+    TEST_NAME unit.execution
+    SOURCES unit/execution.cpp
 )
-
-
-
+add_testcase(
+    TEST_NAME unit.exception
+    SOURCES unit/exception.cpp
+)
+add_testcase(
+    TEST_NAME unit.memory
+    SOURCES unit/memory.cpp
+)
+add_testcase(
+    TEST_NAME unit.return_type
+    SOURCES unit/return_type.cpp
+)
 add_testcase(
     TEST_NAME functional.tag_invoke
     SOURCES functional/tag_invoke.cpp

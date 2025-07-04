@@ -12,7 +12,7 @@ using flow_controller_t =
 using test_injection_dispatcher_t =
     cf::__details::testing::test_injection_dispatcher_t;
 
-using cf::__details::testing::simple_thread_pool;
+using cf::__details::testing::simple_thread_pool_t;
 using cf::__details::testing::test_exception_t;
 
 // TODO: test case: sync_wait destroys coroutine and then
@@ -102,7 +102,7 @@ SCENARIO("smart await")
                                coro_A_address_future });
       THEN("During execute everything should be called")
       {
-        simple_thread_pool thread_pool;
+        simple_thread_pool_t thread_pool;
         cf::sync_wait(coro_A(), &thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
@@ -160,7 +160,7 @@ SCENARIO("smart await")
                                coro_A_address_future });
       THEN("During execute everything should be called")
       {
-        simple_thread_pool thread_pool;
+        simple_thread_pool_t thread_pool;
         cf::sync_wait(coro_A(), &thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
@@ -250,7 +250,7 @@ SCENARIO("sync wait")
                                coro_A_address_future });
       THEN("During execute everything should be called")
       {
-        simple_thread_pool thread_pool;
+        simple_thread_pool_t thread_pool;
         cf::sync_wait(coro_A(), &thread_pool);
         REQUIRE(called_A);
         REQUIRE(called_B);
