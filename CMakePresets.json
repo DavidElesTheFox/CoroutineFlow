@@ -1,5 +1,5 @@
 {
-    "version": 10,
+    "version": 8,
     "cmakeMinimumRequired": {
         "major": 3,
         "minor": 28,
@@ -128,6 +128,16 @@
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=memory",
                 "CF_LINK_OPTIONS": "-fsanitize=memory"
+            }
+        },
+        {
+            "name": "dev-clang-coverage",
+            "displayName": "Developement Config clang with coverage",
+            "description": "Developement build with code coverage support",
+            "inherits": "dev-clang",
+            "cacheVariables": {
+                "CF_COMPILE_OPTIONS": "-O1;-g;-fprofile-instr-generate;-fcoverage-mapping",
+                "CF_LINK_OPTIONS": "-fprofile-instr-generate"
             }
         }
     ],

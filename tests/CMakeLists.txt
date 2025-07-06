@@ -1,4 +1,12 @@
 include(FetchContent)
+FetchContent_Declare(
+    Catch2Test
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.8.1
+)
+
+FetchContent_MakeAvailable(Catch2Test)
+include(Catch)
 
 function(add_testcase)
 set(options "")
@@ -30,6 +38,14 @@ target_link_options(${arg_TEST_NAME}
     PUBLIC
        ${CF_LINK_OPTIONS}
 )
+target_compile_options(${arg_TEST_NAME}
+    PUBLIC
+        ${CF_COMPILE_OPTIONS}
+)
+catch_discover_tests(${arg_TEST_NAME}
+    PROPERTIES
+        ENVIRONMENT "LLVM_PROFILE_FILE=coverage-%m-%p.profraw"
+)
 
 add_test(
     NAME ${arg_TEST_NAME} 
@@ -37,13 +53,6 @@ add_test(
 )
 endfunction()
 
-FetchContent_Declare(
-    Catch2Test
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.8.1
-)
-
-FetchContent_MakeAvailable(Catch2Test)
 
 add_testcase(
     TEST_NAME unit.tag_invoke
