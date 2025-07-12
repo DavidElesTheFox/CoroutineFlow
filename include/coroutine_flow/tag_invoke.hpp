@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <utility>
 
 namespace coroutine_flow
 {
@@ -11,7 +12,9 @@ namespace _tag_invoke
   struct func
   {
       template <typename Cpo, typename... Args>
-      constexpr auto operator()(Cpo cpo, Args&&... args) const noexcept
+      constexpr auto operator()(Cpo cpo, Args&&... args) const noexcept(
+          noexcept(tag_invoke(std::declval<Cpo>(), std::declval<Args>()...)))
+          -> decltype(tag_invoke(std::declval<Cpo>(), std::declval<Args>()...))
       {
         return tag_invoke(std::forward<Cpo>(cpo), std::forward<Args>(args)...);
       }
@@ -50,11 +53,17 @@ inline constexpr bool is_tag_invocable_v =
 template <typename Cpo, typename... Args>
 inline constexpr bool is_noexcept_tag_invocable_v =
     noexcept(_tag_invoke::try_tag_invoke<Cpo, Args...>(0)());
-
+/*
 template <typename Cpo, typename... Args>
 using is_tag_invocable = std::bool_constant<is_tag_invocable_v<Cpo, Args...>>;
 
 template <typename Cpo, typename... Args>
 using is_noexcept_tag_invocable =
     std::bool_constant<is_noexcept_tag_invocable_v<Cpo, Args...>>;
+*/
+template <typename Cpo, typename... Args>
+concept is_tag_invocable = is_tag_invocable_v<Cpo, Args...>;
+
+template <typename Cpo, typename... Args>
+concept is_noexcept_tag_invocable = is_noexcept_tag_invocable_v<Cpo, Args...>;
 } // namespace coroutine_flow

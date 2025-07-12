@@ -15,7 +15,7 @@ class SomeLogic
     int operator()(int a, const T& object) const
     {
       int x = 2 * a;
-      if constexpr (cf::is_tag_invocable<MyCpo, cf::tag_t<T>>())
+      if constexpr (cf::is_tag_invocable_v<MyCpo, cf::tag_t<T>>)
       {
         x = cf::tag_invoke(MyCpo{}, object);
       }

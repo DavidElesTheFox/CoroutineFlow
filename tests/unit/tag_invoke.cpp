@@ -41,31 +41,23 @@ TEST_CASE("has_tag_invoke", "[tag_invoke]")
 {
   constexpr bool has_tag = cf::is_tag_invocable_v<tag_01, CustomClass01&>;
   REQUIRE(has_tag);
-  constexpr bool has_tag_2 = cf::is_tag_invocable<tag_01, CustomClass01&>();
-  REQUIRE(has_tag_2);
 }
 TEST_CASE("has_no_tag_invoke", "[tag_invoke]")
 {
   constexpr bool has_tag = cf::is_tag_invocable_v<tag_01, CustomClass01>;
   REQUIRE_FALSE(has_tag);
-  constexpr bool has_tag_2 = cf::is_tag_invocable<tag_01, CustomClass01>();
-  REQUIRE_FALSE(has_tag_2);
 }
 
 TEST_CASE("has_no_tag_invoke_at_all", "[tag_invoke]")
 {
   constexpr bool has_tag = cf::is_tag_invocable_v<tag_01, CustomClass02>;
   REQUIRE_FALSE(has_tag);
-  constexpr bool has_tag_2 = cf::is_tag_invocable<tag_01, CustomClass02>();
-  REQUIRE_FALSE(has_tag_2);
 }
 
 TEST_CASE("has_no_except_tag_invoke", "[tag_invoke]")
 {
   constexpr bool has_tag = cf::is_tag_invocable_v<tag_01, CustomClass03&>;
   REQUIRE(has_tag);
-  constexpr bool has_tag_2 = cf::is_tag_invocable<tag_01, CustomClass03&>();
-  REQUIRE(has_tag_2);
 }
 
 TEST_CASE("has_no_except_tag_invoke_of_no_except", "[tag_invoke]")
@@ -73,9 +65,6 @@ TEST_CASE("has_no_except_tag_invoke_of_no_except", "[tag_invoke]")
   constexpr bool has_tag =
       cf::is_noexcept_tag_invocable_v<tag_01, CustomClass03&>;
   REQUIRE(has_tag);
-  constexpr bool has_tag_2 =
-      cf::is_noexcept_tag_invocable<tag_01, CustomClass03&>();
-  REQUIRE(has_tag_2);
 }
 
 TEST_CASE("has_no_no_except_tag_invoke", "[tag_invoke]")
@@ -83,7 +72,4 @@ TEST_CASE("has_no_no_except_tag_invoke", "[tag_invoke]")
   constexpr bool has_tag =
       cf::is_noexcept_tag_invocable_v<tag_01, CustomClass01&>;
   REQUIRE_FALSE(has_tag);
-  constexpr bool has_tag_2 =
-      cf::is_noexcept_tag_invocable<tag_01, CustomClass01&>();
-  REQUIRE_FALSE(has_tag_2);
 }

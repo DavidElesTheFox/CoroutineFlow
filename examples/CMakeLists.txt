@@ -19,6 +19,14 @@ function(add_example)
         PUBLIC
             coroutine_flow::coroutine_flow
     )
+    target_compile_options(${arg_TEST_NAME}
+        PUBLIC
+            ${CF_COMPILE_OPTIONS}
+    )
+    target_link_options(${arg_TEST_NAME}
+    PUBLIC
+       ${CF_LINK_OPTIONS}
+    )
 endfunction()
 
 add_example(

@@ -15,12 +15,18 @@
         "xaver.clang-format",
         "yifei-zhang.cmake-test-tools",
         "ericniebler.erics-build-output-colorizer",
-        "vadimcn.vscode-lldb"
+        "vadimcn.vscode-lldb",
+        "matepek.vscode-catch2-test-adapter"
       ],
       "settings": {
         "editor.formatOnSave": true,
         "clang-format.executable": "clang-format-19",
-        "C_Cpp.clang_format_style": "file"
+        "C_Cpp.clang_format_style": "file",
+        "testMate.cpp.test.advancedExecutables": [
+          {
+            "pattern": "{build}/**/{unit,functional}.*"
+          }
+        ]
       }
     }
   }
