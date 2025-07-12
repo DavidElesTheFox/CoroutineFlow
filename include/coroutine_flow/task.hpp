@@ -394,10 +394,10 @@ namespace __details
         {
           CF_ATTACH_NOTE("Async call is finished");
 
-          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
           const bool has_been_resumed =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acq_rel);
+          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
           CF_TEST_INJECTION(
               injection_point::task__await_suspend__after_test_and_set,
               suspended_handle.address());
