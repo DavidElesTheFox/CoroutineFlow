@@ -1,6 +1,6 @@
 FROM ubuntu:24.04 AS ubuntu
 
-RUN apt update && apt upgrade
+RUN apt update && apt upgrade -y
 
 RUN apt update && apt install -y \
  g++ \

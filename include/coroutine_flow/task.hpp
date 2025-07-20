@@ -329,6 +329,11 @@ namespace __details
         CF_PROFILE_SCOPE();
         CF_TEST_INJECTION(injection_point::task__await_ready__begin,
                           suspended_handle.address());
+        scope_exit_t await_ready_ends = [&]() noexcept
+        {
+          CF_TEST_INJECTION(injection_point::task__await_ready__end,
+                            suspended_handle.address());
+        };
 
         if (current_handle.done())
         {
@@ -347,6 +352,7 @@ namespace __details
 
           return already_ready;
         }
+
         return false;
       }
       T await_resume()
@@ -389,20 +395,19 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         using injection_point = __details::testing::test_injection_points_t;
-
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("Async call is finished");
 
-          const bool has_been_resumed =
+          const bool already_ready =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acq_rel);
-          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
+          CF_ATTACH_NOTE("Has been resumed? ", already_ready);
           CF_TEST_INJECTION(
               injection_point::task__await_suspend__after_test_and_set,
               suspended_handle.address());
 
-          if (has_been_resumed == false)
+          if (already_ready)
           {
             return false;
           }

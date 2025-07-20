@@ -18,6 +18,7 @@ class event_t
 
         bool is_triggered(const std::chrono::milliseconds& timeout) const
         {
+          assert(m_triggered_future.valid());
           if (const auto future_status = m_triggered_future.wait_for(timeout);
               future_status == std::future_status::ready)
           {

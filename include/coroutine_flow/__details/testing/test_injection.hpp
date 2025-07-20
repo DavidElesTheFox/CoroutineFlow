@@ -14,6 +14,7 @@ enum class test_injection_points_t
   task__constructor,
   task__await_ready__begin,
   task__await_ready__after_test_and_set,
+  task__await_ready__end,
 
   task__await_suspend__after_test_and_set,
 
