@@ -79,8 +79,8 @@ add_testcase(
     SOURCES functional/tag_invoke.cpp
 )
 add_testcase(
-    TEST_NAME functional.task_with_result
-    SOURCES functional/task_with_result.cpp
+    TEST_NAME functional.execution
+    SOURCES functional/execution.cpp
 )
 add_testcase(
     TEST_NAME functional.execution_flow_controller
