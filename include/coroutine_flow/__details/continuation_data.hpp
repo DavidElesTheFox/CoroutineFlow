@@ -23,7 +23,8 @@ struct continuation_data
     std::move_only_function<void(continuation_data) noexcept> set_next;
     std::move_only_function<continuation_data&() noexcept> get_next;
     std::move_only_function<void() noexcept> internal_release;
-    bool external_referenced{ false };
+    std::move_only_function<void() noexcept> wait_for_ready_to_release;
+    bool external_referenced{ true };
 
     bool is_empty() const { return set_next == nullptr; }
     bool has_external_reference() const noexcept { return external_referenced; }
@@ -54,6 +55,8 @@ struct continuation_data
       };
       result.internal_release = [=]() noexcept
       { handler.promise().internal_release(); };
+      result.wait_for_ready_to_release = [=]() noexcept
+      { handler.promise().wait_for_ready_to_release(); };
       return result;
     }
 };

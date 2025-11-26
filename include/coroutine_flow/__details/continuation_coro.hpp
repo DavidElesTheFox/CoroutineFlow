@@ -8,6 +8,8 @@
 #include <coroutine>
 #include <utility>
 
+#include <iostream>
+
 namespace coroutine_flow::__details
 {
 class final_coroutine_t
@@ -44,16 +46,26 @@ class final_coroutine_t
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<other_promise_type> suspended_handle) noexcept
         {
+          // suspended_handle here the coroutine that is just now finished.
           CF_PROFILE_SCOPE();
-          // Handle can be empty when basically it is a null extension.
           assert(handle.is_empty() == false);
           assert(handle.coro.done() == false &&
                  "The final coroutine shouldn't be done already.");
+          // TODO: ERROR: Sometimes the task_promise got destroyed when we are
+          // here.
+          /*Here is the problem: suspended_handle is only valid when
+          destroy_suspended_handle is true otherwise it might already be
+          destroyed by scope_exit of continue_suspended_handle - we would like
+          to maintain the lifetime of the intermediate coroutines to ensure the
+          return value validity So the solution is a guard that doesn't allow
+          the scope_exit to destroy this handle until the finalizer is not set
+          below!
+
+          */
           assert(
               suspended_handle.done() &&
               "The final handle will not continue the suspended handle. Thus "
               "we expect that it is already finished, but not destroyed.");
-
           CF_ATTACH_NOTE("suspended_handle: ", suspended_handle.address());
           CF_ATTACH_NOTE("handle: ", handle.coro.address());
           CF_ATTACH_NOTE("destroy_suspended_handle", destroy_suspended_handle);
@@ -74,13 +86,18 @@ class final_coroutine_t
            */
           if (destroy_suspended_handle)
           {
+            suspended_handle.promise().ready_to_release.test_and_set();
+            suspended_handle.promise().ready_to_release.notify_all();
             suspended_handle.destroy();
           }
           else
           {
             // ensure that current coroutine is destroyed
             suspended_handle.promise().set_finalizer(handle.coro);
+            suspended_handle.promise().ready_to_release.test_and_set();
+            suspended_handle.promise().ready_to_release.notify_all();
           }
+
           auto coro = handle.coro;
           return coro;
         }
@@ -164,6 +181,10 @@ struct final_coroutine_t::promise_t
     {
       assert(false && "Final coroutine should be the final and never a "
                       "suspended coroutine");
+    }
+    void wait_for_ready_to_release()
+    {
+      assert(false && "Final coroutine should be never awaited for releasing");
     }
 };
 final_coroutine_t::awaiter_t final_coroutine_t::operator co_await() noexcept

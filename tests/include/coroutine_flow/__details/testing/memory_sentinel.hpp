@@ -5,7 +5,10 @@
 #include <shared_mutex>
 #include <stacktrace>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include <iostream>
 
 namespace coroutine_flow::__details::testing
 {
@@ -83,6 +86,7 @@ class memory_sentinel_t
       auto& entries = m_memory_map[object];
       if (entries.empty())
       {
+        m_missed_destructions.insert(object);
         return; // During move it might happen
       }
       auto& entry = entries.back();
@@ -107,9 +111,15 @@ class memory_sentinel_t
       }
       return result;
     }
+    std::vector<void*> collect_missed_destructor_calls() const
+    {
+      std::shared_lock lock{ m_memory_map_mutex };
+      return { m_missed_destructions.begin(), m_missed_destructions.end() };
+    }
 
   private:
     std::unordered_map<void*, std::vector<entry_t>> m_memory_map;
+    std::unordered_set<void*> m_missed_destructions;
     mutable std::shared_mutex m_memory_map_mutex;
 };
 } // namespace coroutine_flow::__details::testing

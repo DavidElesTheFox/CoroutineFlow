@@ -18,6 +18,7 @@ function(add_example)
     target_link_libraries(${arg_TEST_NAME}
         PUBLIC
             coroutine_flow::coroutine_flow
+            -lstdc++_libbacktrace
     )
     target_compile_options(${arg_TEST_NAME}
         PUBLIC

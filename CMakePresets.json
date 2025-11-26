@@ -26,7 +26,7 @@
                     "value": "ON"
                 },
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CF_COMPILE_OPTIONS": "-O1;-g"
+                "CF_COMPILE_OPTIONS": "-O0;-g"
             }
         },
         {

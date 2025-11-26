@@ -357,7 +357,6 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
   CF_PROFILE_SCOPE();
   memory_check_t memory_checker;
   {
-    std::cout << "started" << std::endl;
     auto thread_pool = test_controller_t<TestType>::create_scheduler();
 
     // Coroutine 1
@@ -370,7 +369,6 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                        coro_1_call_count]() mutable -> cf::task<int>
     {
       CF_PROFILE_MARK("coro_1");
-      std::cout << "Here" << std::endl;
 
       p_coro_call_count++;
       p_called_event->trigger();
@@ -388,15 +386,12 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
                        coro_2_call_count]() mutable -> cf::task<int>
     {
       CF_PROFILE_MARK("coro_2 01");
-      std::cout << "Here 1" << std::endl;
 
       int result = co_await coro_1();
       CF_PROFILE_MARK("coro_2 02");
-      std::cout << "Here 2" << std::endl;
       REQUIRE(result == 1);
       result = co_await coro_1();
       CF_PROFILE_MARK("coro_2 03");
-      std::cout << "Here 3" << std::endl;
       REQUIRE(result == 1);
       p_coro_call_count++;
       p_called_event->trigger();
@@ -417,16 +412,13 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
       int result = co_await coro_2();
       CF_PROFILE_MARK("coro_3 02");
-      std::cout << "Here 01" << std::endl;
 
       REQUIRE(result == 2);
       result = co_await coro_2();
       CF_PROFILE_MARK("coro_3 03");
-      std::cout << "Here 02" << std::endl;
 
       REQUIRE(result == 2);
       p_coro_call_count++;
-      std::cout << "Here 03" << std::endl;
 
       p_called_event->trigger();
 
