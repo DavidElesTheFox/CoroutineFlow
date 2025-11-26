@@ -39,8 +39,6 @@ namespace __details
       }
       ~result_as_promise_t()
       {
-        std::cout << "@WAT: [" << this << "] destroyed" << std::endl;
-
         CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
                           this);
       }
@@ -82,7 +80,6 @@ namespace __details
       }
       static final_coroutine_t skip(result_as_promise_t extension)
       {
-        std::cout << "@WAT: [" << &extension << "] skip" << std::endl;
         extension();
         co_return;
       }
@@ -167,14 +164,12 @@ namespace __details
 #if CF_ENABLE_INJECTIONS
       task_promise_t()
       {
-        std::cout << "@WAT task promise created: " << this << std::endl;
         CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
                           this);
       }
 #endif
       ~task_promise_t()
       {
-        std::cout << "@WAT task promise destroyed: " << this << std::endl;
         CF_PROFILE_SCOPE();
         CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
         CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,

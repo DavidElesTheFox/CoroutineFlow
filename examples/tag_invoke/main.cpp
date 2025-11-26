@@ -31,12 +31,8 @@ class Foo
 
 int main()
 {
-  std::cout << "Start example.tag_invoke" << std::endl;
   SomeLogic logic;
   const int result = logic(20, Foo{});
   const int result_without_tag = logic(20, 4);
-
-  std::cout << "Result: " << result << std::endl;
-  std::cout << "Result without tag: " << result_without_tag << std::endl;
   return 0;
 }
