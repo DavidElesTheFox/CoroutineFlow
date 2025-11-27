@@ -11,7 +11,7 @@
             "displayName": "Developement Config g++",
             "description": "Developement build config",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build-g++/debug",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": {
                     "type": "BOOL",
@@ -26,7 +26,7 @@
                     "value": "ON"
                 },
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CF_COMPILE_OPTIONS": "-O2;-g"
+                "CF_COMPILE_OPTIONS": "-O1;-g"
             }
         },
         {
@@ -34,7 +34,7 @@
             "displayName": "Developement Config clang",
             "description": "Developement build config",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build-clang/debug",
             "toolchainFile": "${sourceDir}/cmake/clang_toolchain.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": {
@@ -58,7 +58,7 @@
             "displayName": "Developement Config g++ Release",
             "description": "Developement build config Release",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build-release",
+            "binaryDir": "${sourceDir}/build-g++/release",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": {
                     "type": "BOOL",
@@ -81,7 +81,7 @@
             "displayName": "Developement Config clang Release",
             "description": "Developement build config Release",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build-release",
+            "binaryDir": "${sourceDir}/build-clang/release",
             "toolchainFile": "${sourceDir}/cmake/clang_toolchain.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": {
@@ -105,6 +105,7 @@
             "displayName": "Developement Config clang thread sanitizer",
             "description": "Developement build config with thread sanitizer",
             "inherits": "dev-clang",
+            "binaryDir": "${sourceDir}/build-clang/thread-sanitizer",
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=thread",
                 "CF_LINK_OPTIONS": "-fsanitize=thread"
@@ -114,6 +115,7 @@
             "name": "dev-clang-undef-sanitizer",
             "displayName": "Developement Config clang Undefined behavior sanitizer",
             "description": "Developement build config with Undefined behavior sanitizer",
+            "binaryDir": "${sourceDir}/build-clang/undef-sanitizer",
             "inherits": "dev-clang",
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=undefined",
@@ -124,6 +126,7 @@
             "name": "dev-clang-memory-sanitizer",
             "displayName": "Developement Config clang memory sanitizer",
             "description": "Developement build config with memory sanitizer",
+            "binaryDir": "${sourceDir}/build-clang/memory-sanitizer",
             "inherits": "dev-clang",
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=memory",
@@ -135,6 +138,7 @@
             "displayName": "Developement Config clang with coverage",
             "description": "Developement build with code coverage support",
             "inherits": "dev-clang",
+            "binaryDir": "${sourceDir}/build-clang/coverage",
             "cacheVariables": {
                 "CF_COMPILE_OPTIONS": "-O1;-g;-fprofile-instr-generate;-fcoverage-mapping",
                 "CF_LINK_OPTIONS": "-fprofile-instr-generate"
@@ -148,14 +152,56 @@
             "configuration": "Debug"
         },
         {
+            "name": "dev-g++-release-build",
+            "configurePreset": "dev-g++-release",
+            "configuration": "Release"
+        },
+        {
             "name": "dev-clang-build",
             "configurePreset": "dev-clang",
             "configuration": "Debug"
         },
         {
+            "name": "dev-clang-release-build",
+            "configurePreset": "dev-clang-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "dev-clang-undef-sanitizer-build",
+            "configurePreset": "dev-clang-undef-sanitizer",
+            "configuration": "Release"
+        },
+        {
             "name": "dev-clang-thread-sanitizer-build",
             "configurePreset": "dev-clang-thread-sanitizer",
             "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-g++-debug",
+            "configurePreset": "dev-g++",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-g++-release",
+            "configurePreset": "dev-g++-release",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-debug",
+            "configurePreset": "dev-clang",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-release",
+            "configurePreset": "dev-clang-release",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-undef-sanitizer",
+            "configurePreset": "dev-clang-undef-sanitizer",
+            "displayName": "Test Debug [g++]"
         }
     ]
 }

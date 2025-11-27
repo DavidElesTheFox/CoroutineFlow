@@ -28,10 +28,12 @@ class memory_check_t
       std::ostringstream os;
       if (leaks.empty() == false)
       {
+        os << "Memory leaks [" << leaks.size() << "]:" << std::endl;
         for (const auto& [object, location] : leaks)
         {
           os << "object: " << object << " at: \n" << location << std::endl;
         }
+
         FAIL("Memory leak found. Errors:\n" + os.str());
       }
     }

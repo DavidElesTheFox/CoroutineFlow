@@ -64,7 +64,7 @@ This library optionally integrates tracy. With this one can easily follow what r
 
 ## Stability
 
-Current Test Coverage: 83%. [See the llvm report](./documentation/coverage.report)
+Current Test Coverage: 78.6%. [See the llvm report](./documentation/coverage.report)
 
 Currently 84 tests are defined to check
  - proper allocations/deallocations (promises and awaiters as well)

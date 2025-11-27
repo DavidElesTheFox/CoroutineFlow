@@ -75,7 +75,10 @@ class coroutine_chain_t
                               task__run_async__after_released_suspended,
                           suspended_address);
       }
-      std::vector<std::coroutine_handle<>> handles_to_destroy;
+
+      std::vector<
+          std::tuple<std::coroutine_handle<>, std::move_only_function<void()>>>
+          handles_to_destroy;
       /*
       We need to destroy the suspended handle. This might be the top level
       coroutine when run_async is called and it will ensure that we destroying
@@ -84,13 +87,20 @@ class coroutine_chain_t
       */
       if (destroy_suspended_handle)
       {
-        handles_to_destroy.push_back(*suspended_handle);
+        handles_to_destroy.push_back(
+            { *suspended_handle,
+              [&]
+              {
+                suspended_handle.value().promise().wait_for_ready_to_release();
+              } });
       }
       auto destroy_suspended_at_end =
           scope_exit_t{ [&]() noexcept
                         {
-                          for (auto handle : handles_to_destroy)
+                          for (auto& [handle, wait_callback] :
+                               handles_to_destroy)
                           {
+                            wait_callback();
                             handle.destroy();
                           }
                         } };
@@ -110,9 +120,12 @@ class coroutine_chain_t
           highest level coroutine and we would like to keep alive it in case of
           sync wait
           */
-          if (current.has_external_reference() == false)
+          if (current.has_external_reference() == false &&
+              current.coro.address() != suspended_handle->address())
           {
-            handles_to_destroy.push_back(current.coro);
+            handles_to_destroy.push_back(
+                { current.coro,
+                  std::exchange(current.wait_for_ready_to_release, nullptr) });
           }
           /*
           It might be that in the chain not the first but the last item

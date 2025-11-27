@@ -15,6 +15,9 @@
 #include <functional>
 #include <future>
 
+#include <iostream>
+#include <stacktrace>
+
 namespace coroutine_flow
 {
 
@@ -41,6 +44,7 @@ namespace __details
       }
 #endif
       result_as_promise_t(result_as_promise_t&&) = default;
+      result_as_promise_t& operator=(result_as_promise_t&&) = default;
       std::unique_ptr<std::promise<T>> result_promise{
         std::make_unique<std::promise<T>>()
       };
@@ -74,7 +78,7 @@ namespace __details
         }
         co_return;
       }
-      static final_coroutine_t skip(result_as_promise_t&& extension)
+      static final_coroutine_t skip(result_as_promise_t extension)
       {
         extension();
         co_return;
@@ -151,6 +155,12 @@ namespace __details
        * is checked by the chain.
        */
       std::atomic_flag internal_referenced{ false };
+
+      /**
+       * release can be called only when this flag is true, until that, the
+       * coroutine might be still used in the final_coroutine.
+       */
+      std::atomic_flag ready_to_release{ false };
 #if CF_ENABLE_INJECTIONS
       task_promise_t()
       {
@@ -164,6 +174,7 @@ namespace __details
         CF_ATTACH_NOTE("handle", handle_t::from_promise(*this).address());
         CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
                           this);
+        assert(ready_to_release.test());
         if (finalizer)
         {
           finalizer.destroy();
@@ -188,7 +199,18 @@ namespace __details
         internal_referenced.clear(std::memory_order_release);
         internal_referenced.notify_all();
       }
-      void set_finalizer(std::coroutine_handle<> value) { finalizer = value; }
+      // TODO: Rename it to set_finalizer_and_release
+      void set_finalizer(std::coroutine_handle<> value)
+      {
+        assert(!finalizer);
+        finalizer = value;
+        internal_release();
+      }
+
+      void wait_for_ready_to_release()
+      {
+        ready_to_release.wait(false, std::memory_order_acquire);
+      }
       __details::coroutine_chain_t<task_promise_t>& get_coroutine_chain()
       {
         return coroutine_chain;
@@ -217,9 +239,10 @@ namespace __details
           */
           if constexpr (std::movable<T>)
           {
-            auto owned_extension = std::move(extension);
+            auto owned_extension = std::exchange(extension, {});
             auto owned_result = std::move(result);
-            internal_release();
+
+            // internal_release();
             if (destroy_handle)
             {
               return result_as_promise_t<T>::execute_on(
@@ -238,7 +261,7 @@ namespace __details
           {
             auto owned_extension = std::move(extension);
             auto owned_result = result;
-            internal_release();
+            // internal_release();
             if (destroy_handle)
             {
               return result_as_promise_t<T>::execute_on(
@@ -257,8 +280,9 @@ namespace __details
         else
         {
           auto owned_extension = std::move(extension);
-          internal_release();
-          return result_as_promise_t<T>::skip(std::move(owned_extension));
+          // internal_release();
+          return result_as_promise_t<T>::skip(
+              std::exchange(owned_extension, {}));
         }
       }
 
@@ -329,6 +353,17 @@ namespace __details
         CF_PROFILE_SCOPE();
         CF_TEST_INJECTION(injection_point::task__await_ready__begin,
                           suspended_handle.address());
+        scope_exit_t await_ready_ends = [&]() noexcept
+        {
+          CF_TEST_INJECTION(injection_point::task__await_ready__end,
+                            suspended_handle.address());
+        };
+
+        // Clear the flag at the start of each await operation to ensure
+        // it's in the correct initial state. This must happen before any
+        // checks to avoid race conditions with the callback.
+        suspended_handle.promise().suspended_handle_resumed.clear(
+            std::memory_order_release);
 
         if (current_handle.done())
         {
@@ -347,6 +382,7 @@ namespace __details
 
           return already_ready;
         }
+
         return false;
       }
       T await_resume()
@@ -365,6 +401,7 @@ namespace __details
           promise.internal_release();
           if (promise.external_referenced == false)
           {
+            promise.wait_for_ready_to_release();
             current_handle.destroy();
           }
         }
@@ -389,21 +426,23 @@ namespace __details
       {
         CF_PROFILE_SCOPE();
         using injection_point = __details::testing::test_injection_points_t;
-
         if (current_handle.done())
         {
           CF_ATTACH_NOTE("Async call is finished");
 
-          const bool has_been_resumed =
+          const bool already_ready =
               suspended_handle.promise().suspended_handle_resumed.test_and_set(
                   std::memory_order_acq_rel);
-          CF_ATTACH_NOTE("Has been resumed? ", has_been_resumed);
+          has_been_suspended = already_ready == false;
+
+          CF_ATTACH_NOTE("Has been resumed? ", already_ready);
           CF_TEST_INJECTION(
               injection_point::task__await_suspend__after_test_and_set,
               suspended_handle.address());
 
-          if (has_been_resumed == false)
+          if (already_ready)
           {
+            // current_handle.destroy();
             return false;
           }
         }
@@ -411,6 +450,8 @@ namespace __details
 
         other_promise_type& promise = suspended_handle.promise();
         CF_ATTACH_NOTE("Suspended promise", suspended_handle.address());
+        // Flag was already cleared in await_ready(), so we can safely store
+        // the suspended handle now
         promise.get_coroutine_chain().store_suspended_handle(suspended_handle);
         return true;
       }
@@ -451,6 +492,7 @@ class task
     {
       if (m_coro_handle)
       {
+        m_coro_handle.promise().ready_to_release.test_and_set();
         m_coro_handle.destroy();
       }
       CF_TEST_INJECTION(
@@ -480,10 +522,7 @@ class task
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
           [p_scheduler = scheduler](std::function<void()> handle)
-      {
-        auto task_call = [p_handle = handle]() { p_handle(); };
-        tag_invoke(schedule_task_t{}, p_scheduler, std::move(task_call));
-      };
+      { tag_invoke(schedule_task_t{}, p_scheduler, std::move(handle)); };
       m_coro_handle.promise().execute_extension = true;
       m_coro_handle.promise().external_referenced = keep_handle_alive;
       m_result_future =
@@ -529,34 +568,18 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
   {
     [[maybe_unused]]
     auto* handle_address = handle.address();
-    if constexpr (std::movable<T>)
-    {
-      auto result = std::move(task.m_result_future.get());
-      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
-                            task__sync_wait__has_result,
-                        handle_address);
-      handle.promise().internal_referenced.wait(true,
-                                                std::memory_order_acquire);
-      handle.destroy();
-      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
-                            task__sync_wait__handle_destroy,
-                        handle_address);
-      return std::move(result);
-    }
-    else
-    {
-      T result = task.m_result_future.get();
-      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
-                            task__sync_wait__has_result,
-                        handle_address);
-      handle.promise().internal_referenced.wait(true,
-                                                std::memory_order_acquire);
-      handle.destroy();
-      CF_TEST_INJECTION(__details::testing::test_injection_points_t::
-                            task__sync_wait__handle_destroy,
-                        handle_address);
-      return { result };
-    }
+
+    T result = task.m_result_future.get();
+    CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                          task__sync_wait__has_result,
+                      handle_address);
+    handle.promise().internal_referenced.wait(true, std::memory_order_acquire);
+    handle.promise().wait_for_ready_to_release();
+    handle.destroy();
+    CF_TEST_INJECTION(__details::testing::test_injection_points_t::
+                          task__sync_wait__handle_destroy,
+                      handle_address);
+    return result;
   }
   catch (...)
   {
@@ -577,14 +600,14 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
 
   get_promise().schedule_callback = schedule_callback;
 
-  suspended_promise->suspended_handle_resumed.clear();
+  // Don't clear suspended_handle_resumed here - it should only be cleared
+  // after we know the coroutine will actually suspend (in await_suspend)
   suspended_promise->internal_referenced.test_and_set(
       std::memory_order_release);
   suspended_promise->suspend_started.clear(std::memory_order_release);
 
   schedule_callback(
       [p_coro_handle = m_coro_handle,
-       p_this_ptr = this,
        p_suspended_promise = suspended_promise]() mutable
       {
         CF_PROFILE_SCOPE_N("Task::AsyncRun");
@@ -609,25 +632,38 @@ task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
         really started. And when it is really started we can check weather the
         suspended_handle resumed or not.
         */
-        const bool suspended_is_resumed =
-            p_suspended_promise->suspended_handle_resumed.test_and_set(
-                std::memory_order_acq_rel);
+
         const bool suspend_started = p_suspended_promise->suspend_started.test(
             std::memory_order_acquire);
-        if (suspended_is_resumed || suspend_started == false)
+        if (suspend_started == false)
         {
-          CF_ATTACH_NOTE("suspended handle were not really suspended.");
+          CF_ATTACH_NOTE("suspended handle were not started.");
           return;
         }
         if (p_coro_handle.done())
         {
           CF_PROFILE_ZONE(HandleDone, "Handle Done");
-          auto destroy_coro_at_end =
-              __details::scope_exit_t{ [&]() noexcept
-                                       { p_coro_handle.destroy(); } };
+          const bool suspended_is_resumed =
+              p_suspended_promise->suspended_handle_resumed.test_and_set(
+                  std::memory_order_acq_rel);
+          if (suspended_is_resumed == false)
+          {
+            auto destroy_coro_at_end = __details::scope_exit_t{
+              [&]() noexcept
+              {
+                p_coro_handle.promise().wait_for_ready_to_release();
+                p_coro_handle.destroy();
+              }
+            };
 
-          p_suspended_promise->get_coroutine_chain()
-              .continue_suspended_handle();
+            p_suspended_promise->get_coroutine_chain()
+                .continue_suspended_handle();
+          }
+          else
+          {
+            CF_ATTACH_NOTE("suspended handle were not really suspended.");
+            return;
+          }
         }
         else
         {

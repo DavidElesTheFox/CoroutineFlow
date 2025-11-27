@@ -6,6 +6,7 @@ namespace coroutine_flow::__details::testing
 {
 struct inline_scheduler_t
 {
+    void wait_all() {}
 };
 
 void tag_invoke(coroutine_flow::schedule_task_t,

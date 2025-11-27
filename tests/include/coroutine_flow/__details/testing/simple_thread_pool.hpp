@@ -57,7 +57,9 @@ class simple_thread_pool_t
     simple_thread_pool_t& operator=(const simple_thread_pool_t&) = delete;
     simple_thread_pool_t& operator=(simple_thread_pool_t&&) = delete;
 
-    ~simple_thread_pool_t()
+    ~simple_thread_pool_t() { wait_all(); }
+
+    void wait_all() noexcept
     {
       request_stop();
       for (auto& thread : m_threads)
@@ -117,6 +119,7 @@ void handle_error(simple_thread_pool_t&& thread_pool)
     }
   }
   FAIL("Error occurred in thread pool" + os.str());
+  thread_pool.wait_all();
 }
 
 } // namespace coroutine_flow::__details::testing

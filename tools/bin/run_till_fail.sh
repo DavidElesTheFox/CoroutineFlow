@@ -8,12 +8,13 @@ COMMAND=$1
 echo $COMMAND
 shift 1
 ARGS=$@
-
+count=0
 while ((OK == 0));
 do
+    let count=count+1
 	#../../tools/capture-build/tracy-capture -f -o last.tracy&
 	#gdb -ex=r --args $@
-	echo "# Run: $COMMAND $ARGS"
+	echo "# ($count) Run: $COMMAND $ARGS"
 	$COMMAND "$ARGS"
 	OK=$?
 	echo "# Waiting for profiling data"
