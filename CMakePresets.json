@@ -152,14 +152,56 @@
             "configuration": "Debug"
         },
         {
+            "name": "dev-g++-release-build",
+            "configurePreset": "dev-g++-release",
+            "configuration": "Release"
+        },
+        {
             "name": "dev-clang-build",
             "configurePreset": "dev-clang",
             "configuration": "Debug"
         },
         {
+            "name": "dev-clang-release-build",
+            "configurePreset": "dev-clang-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "dev-clang-undef-sanitizer-build",
+            "configurePreset": "dev-clang-undef-sanitizer",
+            "configuration": "Release"
+        },
+        {
             "name": "dev-clang-thread-sanitizer-build",
             "configurePreset": "dev-clang-thread-sanitizer",
             "configuration": "Debug"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-g++-debug",
+            "configurePreset": "dev-g++",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-g++-release",
+            "configurePreset": "dev-g++-release",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-debug",
+            "configurePreset": "dev-clang",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-release",
+            "configurePreset": "dev-clang-release",
+            "displayName": "Test Debug [g++]"
+        },
+        {
+            "name": "test-clang-undef-sanitizer",
+            "configurePreset": "dev-clang-undef-sanitizer",
+            "displayName": "Test Debug [g++]"
         }
     ]
 }
