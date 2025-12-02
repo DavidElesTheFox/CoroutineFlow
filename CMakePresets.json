@@ -101,17 +101,6 @@
             }
         },
         {
-            "name": "dev-clang-thread-sanitizer",
-            "displayName": "Developement Config clang thread sanitizer",
-            "description": "Developement build config with thread sanitizer",
-            "inherits": "dev-clang",
-            "binaryDir": "${sourceDir}/build-clang/thread-sanitizer",
-            "cacheVariables": {
-                "CF_COMPILE_OPTIONS": "-O1;-g;-fsanitize=thread",
-                "CF_LINK_OPTIONS": "-fsanitize=thread"
-            }
-        },
-        {
             "name": "dev-clang-undef-sanitizer",
             "displayName": "Developement Config clang Undefined behavior sanitizer",
             "description": "Developement build config with Undefined behavior sanitizer",
