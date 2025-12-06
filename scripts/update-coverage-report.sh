@@ -38,6 +38,9 @@ LLVM_PROFILE_FILE=coverage-%m-%p.profraw ctest
 cd tests
 llvm-profdata-19 merge -o tests.profdata $(find . -name "*.profraw")
 llvm-cov-19 report ./unit.* ./functional.* --instr-profile=./tests.profdata -sources /app/include/coroutine_flow/* > "../coverage.report"
+llvm-cov-19 show ./unit.* ./functional.* --instr-profile=./tests.profdata -sources /app/include/coroutine_flow/* -format=html > ../coverage.html
+llvm-cov-19 export ./unit.* ./functional.* --instr-profile=./tests.profdata -sources /app/include/coroutine_flow/* -format=lcov > ../coverage.lcov
+
 
 echo "Report: $UCR_OUTPUT_DIR/coverage.report"
 cd "$UCR_OLD_DIR"

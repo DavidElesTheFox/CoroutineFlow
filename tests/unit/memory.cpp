@@ -6,11 +6,14 @@
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 #include <coroutine_flow/__details/testing/test_config.hpp>
 
+#include <coroutine_flow/extensions/promise_extension.hpp>
 namespace cf = coroutine_flow;
 
 using cf::__details::testing::base_test_case_t;
 using cf::__details::testing::memory_check_t;
 using cf::__details::testing::simple_thread_pool_t;
+template <typename T>
+using default_task_t = cf::task_t<T, cf::extensions::promise_extension_t>;
 
 constexpr const auto c_test_case_timeout =
     cf::__details::testing::c_test_case_timeout;
@@ -27,7 +30,8 @@ TEST_CASE_METHOD(base_test_case_t,
   {
     bool coroutine_state_destroyed = false;
     {
-      auto coro = [](on_exit_t&& checker) -> cf::task<int> { co_return 2; };
+      auto coro = [](on_exit_t&& checker) -> default_task_t<int>
+      { co_return 2; };
       coro({ [&] { coroutine_state_destroyed = true; } });
     }
     REQUIRE(coroutine_state_destroyed);
@@ -47,7 +51,7 @@ TEST_CASE_METHOD(base_test_case_t, "Check Destructor when scheduled", "[task]")
       {
         CF_PROFILE_SCOPE_N("coro owner_scope");
         simple_thread_pool_t thread_pool;
-        auto coro = [](on_exit_t&& checker) -> cf::task<int>
+        auto coro = [](on_exit_t&& checker) -> default_task_t<int>
         {
           CF_PROFILE_SCOPE_N("coro");
           co_return 2;

@@ -21,95 +21,78 @@
 namespace coroutine_flow
 {
 
+template <typename T>
+concept result_holder =
+    std::invocable<T> &&
+    std::invocable<T, std::expected<std::optional<T>, std::exception_ptr>>;
+
 struct schedule_task_t
 {
 };
-template <typename T>
-class task;
+template <typename T, template <typename> typename Extension>
+class task_t;
 namespace __details
 {
-  template <typename T>
-  struct result_as_promise_t
+
+  template <typename T, typename Extension>
+  struct final_executor_t
   {
 #if CF_ENABLE_INJECTIONS
-      result_as_promise_t()
+      final_executor_t()
       {
         CF_TEST_INJECTION(testing::test_injection_points_t::object__construct,
                           this);
       }
-      ~result_as_promise_t()
+      ~final_executor_t()
       {
         CF_TEST_INJECTION(testing::test_injection_points_t::object__destruct,
                           this);
       }
 #endif
-      result_as_promise_t(result_as_promise_t&&) = default;
-      result_as_promise_t& operator=(result_as_promise_t&&) = default;
-      std::unique_ptr<std::promise<T>> result_promise{
-        std::make_unique<std::promise<T>>()
-      };
+      final_executor_t(final_executor_t&&) = default;
+      final_executor_t& operator=(final_executor_t&&) = default;
 
       static final_coroutine_t
           execute_on(final_coroutine_t::fall_through_t _,
-                     result_as_promise_t extension,
+                     final_executor_t executor,
                      std::expected<std::optional<T>, std::exception_ptr> result)
       {
         if constexpr (std::movable<T>)
         {
-          extension(std::move(result));
+          executor.m_extension(std::move(result));
         }
         else
         {
-          extension(result);
+          executor.m_extension(result);
         }
         co_return;
       }
       static final_coroutine_t
-          execute_on(result_as_promise_t extension,
+          execute_on(final_executor_t executor,
                      std::expected<std::optional<T>, std::exception_ptr> result)
       {
         if constexpr (std::movable<T>)
         {
-          extension(std::move(result));
+          executor.m_extension(std::move(result));
         }
         else
         {
-          extension(result);
+          executor.m_extension(result);
         }
         co_return;
       }
-      static final_coroutine_t skip(result_as_promise_t extension)
+      static final_coroutine_t skip(final_executor_t extension)
       {
-        extension();
+        CF_PROFILE_SCOPE();
         co_return;
       }
+      Extension& get_extension() { return m_extension; }
 
     private:
-      void operator()(
-          std::expected<std::optional<T>, std::exception_ptr> result) noexcept
-      {
-        CF_PROFILE_SCOPE_N("result_as_promise");
-        if (result.has_value())
-        {
-          assert(result->has_value());
-          if constexpr (std::movable<T>)
-          {
-            result_promise->set_value(std::move(**result));
-          }
-          else
-          {
-            result_promise->set_value(**result);
-          }
-        }
-        else
-        {
-          result_promise->set_exception(result.error());
-        }
-      }
-      void operator()() noexcept { CF_PROFILE_SCOPE(); }
+      Extension m_extension;
   };
 
-  template <typename T>
+  template <typename T, template <typename> typename Extension>
   struct task_promise_t
   {
       using handle_t = std::coroutine_handle<task_promise_t>;
@@ -124,7 +107,23 @@ namespace __details
       std::function<void(std::function<void()>)> schedule_callback;
       __details::coroutine_chain_t<task_promise_t> coroutine_chain;
 
-      __details::result_as_promise_t<T> extension;
+      /**
+       * this token is a callable token, that returns with the
+       * coroutine result after execution.
+       *
+       * @warning the object is valid only after schedule call.
+       */
+      typename Extension<T>::call_token_t extension_token;
+      static_assert(
+          std::is_invocable_v<decltype(extension_token)> &&
+          std::is_same_v<std::invoke_result_t<decltype(extension_token)>, T>);
+      std::atomic_flag extension_token_available{ false };
+      /**
+       * Extension that will handle the final result.
+       *
+       * @warning Extension is invalid after the schedule call.
+       */
+      __details::final_executor_t<T, Extension<T>> extension;
       bool execute_extension{ false };
       /**
        * When the promise is externally referenced during the final suspend
@@ -215,10 +214,10 @@ namespace __details
       {
         return coroutine_chain;
       }
-      task<T> get_return_object()
+      task_t<T, Extension> get_return_object()
       {
         CF_PROFILE_SCOPE();
-        return task<T>{ handle_t::from_promise(*this) };
+        return task_t<T, Extension>{ handle_t::from_promise(*this) };
       }
       std::suspend_always initial_suspend() noexcept
       {
@@ -233,6 +232,9 @@ namespace __details
 
         if (execute_extension)
         {
+          extension_token = extension.get_extension().get_call_token();
+          extension_token_available.test_and_set(std::memory_order_release);
+          extension_token_available.notify_all();
           /*
            No need for memory synchronization because return_value should be
            written on the same thread where final_suspend
@@ -245,14 +247,14 @@ namespace __details
             // internal_release();
             if (destroy_handle)
             {
-              return result_as_promise_t<T>::execute_on(
+              return final_executor_t<T, Extension<T>>::execute_on(
                   {},
                   std::move(owned_extension),
                   std::move(owned_result));
             }
             else
             {
-              return result_as_promise_t<T>::execute_on(
+              return final_executor_t<T, Extension<T>>::execute_on(
                   std::move(owned_extension),
                   std::move(owned_result));
             }
@@ -264,14 +266,14 @@ namespace __details
             // internal_release();
             if (destroy_handle)
             {
-              return result_as_promise_t<T>::execute_on(
+              return final_executor_t<T, Extension<T>>::execute_on(
                   {},
                   std::move(owned_extension),
                   owned_result);
             }
             else
             {
-              return result_as_promise_t<T>::execute_on(
+              return final_executor_t<T, Extension<T>>::execute_on(
                   std::move(owned_extension),
                   owned_result);
             }
@@ -281,7 +283,7 @@ namespace __details
         {
           auto owned_extension = std::move(extension);
           // internal_release();
-          return result_as_promise_t<T>::skip(
+          return final_executor_t<T, Extension<T>>::skip(
               std::exchange(owned_extension, {}));
         }
       }
@@ -323,7 +325,7 @@ namespace __details
         CF_ATTACH_NOTE("handle: ", handle_t::from_promise(*this).address());
       }
       template <typename U>
-      auto await_transform(task<U> task);
+      auto await_transform(task_t<U, Extension> task);
 
       void on_result_set()
       {
@@ -332,17 +334,19 @@ namespace __details
         result_stored.notify_all();
       }
   };
-  template <typename T>
+  template <typename T, template <typename> typename Extension>
   template <typename U>
-  auto task_promise_t<T>::await_transform(task<U> task)
+  auto task_promise_t<T, Extension>::await_transform(task_t<U, Extension> task)
   {
     CF_PROFILE_SCOPE();
     return task.run_async_impl(schedule_callback, this);
   }
-  template <typename T, coroutine_chain_holder other_promise_type>
+  template <typename T,
+            template <typename> typename Extension,
+            coroutine_chain_holder other_promise_type>
   struct task_awaiter_t
   {
-      using promise_t = task_promise_t<T>;
+      using promise_t = task_promise_t<T, Extension>;
       std::coroutine_handle<promise_t> current_handle;
       std::coroutine_handle<other_promise_type> suspended_handle;
       bool has_been_suspended = true;
@@ -459,24 +463,25 @@ namespace __details
 
 } // namespace __details
 
-template <typename T>
-class task
+template <typename T, template <typename> typename Extension>
+class task_t
 {
   protected:
     template <__details::coroutine_chain_holder other_promise_type>
-    using awaiter_t = __details::task_awaiter_t<T, other_promise_type>;
+    using awaiter_t =
+        __details::task_awaiter_t<T, Extension, other_promise_type>;
 
-    using promise_t = __details::task_promise_t<T>;
+    using promise_t = __details::task_promise_t<T, Extension>;
     using handle_t = std::coroutine_handle<promise_t>;
 
-    template <typename R>
+    template <typename R, template <typename> typename E>
     friend struct __details::task_promise_t;
 
-    friend struct __details::task_promise_t<T>;
+    friend struct __details::task_promise_t<T, Extension>;
 
   public:
     using promise_type = promise_t;
-    explicit task(handle_t&& coro_handle)
+    explicit task_t(handle_t&& coro_handle)
         : m_coro_handle(std::move(coro_handle))
     {
       CF_PROFILE_SCOPE();
@@ -488,7 +493,7 @@ class task
 
     void* address() { return m_coro_handle.address(); }
 
-    ~task()
+    ~task_t()
     {
       if (m_coro_handle)
       {
@@ -500,17 +505,17 @@ class task
           this);
     }
 
-    template <typename U, typename scheduler_t>
+    template <typename U, template <typename> typename E, typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    friend void run_async(task<U>&& task, scheduler_t scheduler);
+    friend void run_async(task_t<U, E>&& task, scheduler_t scheduler);
 
-    template <typename U, typename scheduler_t>
+    template <typename U, template <typename> typename E, typename scheduler_t>
       requires(
           std::copyable<scheduler_t> &&
           is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-    friend U sync_wait(task<U>&& task, scheduler_t scheduler);
+    friend U sync_wait(task_t<U, E>&& task, scheduler_t scheduler);
 
   private:
     template <typename scheduler_t>
@@ -521,12 +526,10 @@ class task
     {
       CF_PROFILE_SCOPE();
       get_promise().schedule_callback =
-          [p_scheduler = scheduler](std::function<void()> handle)
-      { tag_invoke(schedule_task_t{}, p_scheduler, std::move(handle)); };
+          [p_scheduler = scheduler](std::function<void()> callback)
+      { tag_invoke(schedule_task_t{}, p_scheduler, std::move(callback)); };
       m_coro_handle.promise().execute_extension = true;
       m_coro_handle.promise().external_referenced = keep_handle_alive;
-      m_result_future =
-          m_coro_handle.promise().extension.result_promise->get_future();
       tag_invoke(schedule_task_t{},
                  scheduler,
                  [p_current_handle = m_coro_handle] { p_current_handle(); });
@@ -540,36 +543,40 @@ class task
 
     promise_t& get_promise() { return m_coro_handle.promise(); }
     handle_t m_coro_handle;
-    std::future<T> m_result_future;
 };
 
-template <typename T, typename scheduler_t>
+template <typename T,
+          template <typename> typename Extension,
+          typename scheduler_t>
   requires(
       std::copyable<scheduler_t> &&
       is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-void run_async(task<T>&& task, scheduler_t scheduler)
+void run_async(task_t<T, Extension>&& task, scheduler_t scheduler)
 {
   constexpr const bool keep_handle_alive = false;
   std::move(task).schedule(scheduler, keep_handle_alive);
 }
 
-template <typename T, typename scheduler_t>
+template <typename T,
+          template <typename> typename Extension,
+          typename scheduler_t>
   requires(
       std::copyable<scheduler_t> &&
       is_tag_invocable<schedule_task_t, scheduler_t, std::function<void()>>)
-T sync_wait(task<T>&& task, scheduler_t scheduler)
+T sync_wait(task_t<T, Extension>&& task, scheduler_t scheduler)
 {
   constexpr const bool keep_handle_alive = true;
 
   auto handle = task.schedule(scheduler, keep_handle_alive);
-  assert(task.m_result_future.valid());
-
+  auto& coroutine_promise = handle.promise();
   try
   {
     [[maybe_unused]]
     auto* handle_address = handle.address();
 
-    T result = task.m_result_future.get();
+    coroutine_promise.extension_token_available.wait(false,
+                                                     std::memory_order_acquire);
+    T result = coroutine_promise.extension_token();
     CF_TEST_INJECTION(__details::testing::test_injection_points_t::
                           task__sync_wait__has_result,
                       handle_address);
@@ -588,11 +595,12 @@ T sync_wait(task<T>&& task, scheduler_t scheduler)
   }
 }
 
-template <typename T>
+template <typename T, template <typename> typename Extension>
 template <__details::coroutine_chain_holder other_promise_t>
-task<T>::awaiter_t<other_promise_t> task<T>::run_async_impl(
-    std::function<void(std::function<void()>)> schedule_callback,
-    other_promise_t* suspended_promise)
+task_t<T, Extension>::awaiter_t<other_promise_t>
+    task_t<T, Extension>::run_async_impl(
+        std::function<void(std::function<void()>)> schedule_callback,
+        other_promise_t* suspended_promise)
 {
   using injection_point = __details::testing::test_injection_points_t;
   CF_PROFILE_SCOPE();

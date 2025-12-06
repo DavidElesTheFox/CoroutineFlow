@@ -159,11 +159,6 @@
             "name": "dev-clang-undef-sanitizer-build",
             "configurePreset": "dev-clang-undef-sanitizer",
             "configuration": "Release"
-        },
-        {
-            "name": "dev-clang-thread-sanitizer-build",
-            "configurePreset": "dev-clang-thread-sanitizer",
-            "configuration": "Debug"
         }
     ],
     "testPresets": [

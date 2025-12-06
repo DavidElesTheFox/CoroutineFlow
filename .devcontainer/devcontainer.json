@@ -24,7 +24,7 @@
         "C_Cpp.clang_format_style": "file",
         "testMate.cpp.test.advancedExecutables": [
           {
-            "pattern": "{build}/**/{unit,functional}.*"
+            "pattern": "{build-clang,build-g++}/**/{unit,functional}.*"
           }
         ]
       }

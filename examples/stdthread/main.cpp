@@ -1,3 +1,4 @@
+#include <coroutine_flow/extensions/promise_extension.hpp>
 #include <coroutine_flow/task.hpp>
 
 #include <iostream>
@@ -5,6 +6,8 @@
 
 namespace cf = coroutine_flow;
 
+template <typename T>
+using Task = cf::task_t<T, cf::extensions::promise_extension_t>;
 class ThreadFactory
 {
   public:
@@ -22,7 +25,7 @@ void tag_invoke(cf::schedule_task_t&&,
   factory.create_and_detach(std::move(callback));
 }
 
-cf::task<int> foo()
+Task<int> foo()
 {
   co_return 3;
 }
@@ -31,7 +34,7 @@ int main()
 {
   ThreadFactory scheduler;
 
-  auto my_coro = []() -> cf::task<int>
+  auto my_coro = []() -> Task<int>
   {
     const int foo_result = co_await foo();
     co_return 42;

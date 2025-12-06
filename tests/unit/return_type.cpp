@@ -8,6 +8,7 @@
 #include <coroutine_flow/__details/testing/test_config.hpp>
 #include <coroutine_flow/__details/testing/test_exception.hpp>
 
+#include <coroutine_flow/extensions/promise_extension.hpp>
 namespace cf = coroutine_flow;
 
 using cf::__details::testing::base_test_case_t;
@@ -15,6 +16,8 @@ using cf::__details::testing::event_t;
 using cf::__details::testing::memory_check_t;
 using cf::__details::testing::simple_thread_pool_t;
 using cf::__details::testing::test_exception_t;
+template <typename T>
+using default_task_t = cf::task_t<T, cf::extensions::promise_extension_t>;
 
 constexpr const std::chrono::seconds c_test_case_timeout =
     cf::__details::testing::c_test_case_timeout;
@@ -79,10 +82,10 @@ TEST_CASE_METHOD(base_test_case_t, "Non Copyable return type", "[task]")
   {
     simple_thread_pool_t thread_pool;
 
-    auto coro_1 = []() -> cf::task<NonCopyableClass>
+    auto coro_1 = []() -> default_task_t<NonCopyableClass>
     { co_return NonCopyableClass{}; };
 
-    auto coro_2 = [&]() -> cf::task<NonCopyableClass>
+    auto coro_2 = [&]() -> default_task_t<NonCopyableClass>
     {
       auto result = co_await coro_1();
       co_return result;
@@ -104,10 +107,10 @@ TEST_CASE("Non Moveable return type", "[task]")
   {
     simple_thread_pool_t thread_pool;
 
-    auto coro_1 = []() -> cf::task<NonMovableClass>
+    auto coro_1 = []() -> default_task_t<NonMovableClass>
     { co_return NonMovableClass{}; };
 
-    auto coro_2 = [&]() -> cf::task<NonMovableClass>
+    auto coro_2 = [&]() -> default_task_t<NonMovableClass>
     {
       auto result = co_await coro_1();
       co_return result;
@@ -128,10 +131,10 @@ TEST_CASE_METHOD(base_test_case_t, "Reference return type", "[task]")
     int my_int = 0;
     auto [event, token] = event_t::create("coroutine finished");
 
-    auto coro_1 = [&]() mutable -> cf::task<std::reference_wrapper<int>>
+    auto coro_1 = [&]() mutable -> default_task_t<std::reference_wrapper<int>>
     { co_return my_int; };
 
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       int& my_int_reference = co_await coro_1();
       my_int_reference = 1;
@@ -156,9 +159,9 @@ TEST_CASE_METHOD(base_test_case_t, "Pointer return type", "[task]")
     int my_int = 0;
     auto [event, token] = event_t::create("coroutine finished");
 
-    auto coro_1 = [&]() mutable -> cf::task<int*> { co_return &my_int; };
+    auto coro_1 = [&]() mutable -> default_task_t<int*> { co_return &my_int; };
 
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       int* my_int_ptr = co_await coro_1();
       *my_int_ptr = 1;
@@ -182,10 +185,11 @@ TEST_CASE_METHOD(base_test_case_t, "Tuple return type", "[task]")
     simple_thread_pool_t thread_pool;
     auto [event, token] = event_t::create("coroutine finished");
 
-    auto coro_1 = [&]() mutable -> cf::task<std::tuple<int, float, std::string>>
+    auto coro_1 =
+        [&]() mutable -> default_task_t<std::tuple<int, float, std::string>>
     { co_return std::tuple{ 1, 2.0f, "hi" }; };
 
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       auto [my_int, my_float, my_string] = co_await coro_1();
       REQUIRE(my_int == 1);
@@ -211,10 +215,10 @@ TEST_CASE_METHOD(base_test_case_t,
   {
     simple_thread_pool_t thread_pool;
 
-    auto coro_1 = [&]() mutable -> cf::task<NonDefaultConstructibleClass>
+    auto coro_1 = [&]() mutable -> default_task_t<NonDefaultConstructibleClass>
     { co_return NonDefaultConstructibleClass{ 1 }; };
 
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       auto non_default_constructible = co_await coro_1();
       co_return 2;

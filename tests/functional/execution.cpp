@@ -2,6 +2,7 @@
 #include <coroutine_flow/__details/testing/memory_check.hpp>
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 #include <coroutine_flow/__details/testing/test_injection.hpp>
+#include <coroutine_flow/extensions/promise_extension.hpp>
 #include <coroutine_flow/task.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,6 +19,8 @@ using cf::__details::testing::test_exception_t;
 
 using cf::__details::testing::memory_check_t;
 
+template <typename T>
+using default_task_t = cf::task_t<T, cf::extensions::promise_extension_t>;
 // TODO: test case: sync_wait destroys coroutine and then
 // suspended_handle_continued called.
 namespace
@@ -41,20 +44,20 @@ SCENARIO("smart await")
     std::atomic_bool called_B{ false };
     std::atomic_bool called_C{ false };
 
-    auto coro_C = [&]() -> cf::task<int>
+    auto coro_C = [&]() -> default_task_t<int>
     {
       CF_PROFILE_MARK("B");
       called_C = true;
       co_return 2;
     };
-    auto coro_B = [&]() -> cf::task<int>
+    auto coro_B = [&]() -> default_task_t<int>
     {
       CF_PROFILE_MARK("B");
       called_B = true;
       co_return 2;
     };
 
-    auto coro_A = [&]() mutable -> cf::task<int>
+    auto coro_A = [&]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("A");
       co_await coro_B();
@@ -283,14 +286,14 @@ SCENARIO("sync wait")
     std::atomic_bool called_A{ false };
     std::atomic_bool called_B{ false };
 
-    auto coro_B = [&]() -> cf::task<int>
+    auto coro_B = [&]() -> default_task_t<int>
     {
       CF_PROFILE_MARK("B");
       called_B = true;
       co_return 2;
     };
 
-    auto coro_A = [&]() mutable -> cf::task<int>
+    auto coro_A = [&]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("A");
       co_await coro_B();

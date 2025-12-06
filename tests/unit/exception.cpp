@@ -8,6 +8,9 @@
 #include <coroutine_flow/__details/testing/test_config.hpp>
 #include <coroutine_flow/__details/testing/test_exception.hpp>
 
+#include <coroutine_flow/extensions/promise_extension.hpp>
+#include <coroutine_flow/task.hpp>
+
 namespace cf = coroutine_flow;
 
 using cf::__details::testing::base_test_case_t;
@@ -15,6 +18,9 @@ using cf::__details::testing::event_t;
 using cf::__details::testing::memory_check_t;
 using cf::__details::testing::simple_thread_pool_t;
 using cf::__details::testing::test_exception_t;
+
+template <typename T>
+using default_task_t = cf::task_t<T, cf::extensions::promise_extension_t>;
 
 constexpr const auto c_test_case_timeout =
     cf::__details::testing::c_test_case_timeout;
@@ -63,7 +69,7 @@ TEST_CASE_METHOD(base_test_case_t, "Coroutine with exception", "[task]")
   memory_check_t memory_checker;
   {
     simple_thread_pool_t thread_pool;
-    auto coro = []() -> cf::task<int>
+    auto coro = []() -> default_task_t<int>
     {
       throw test_exception_t{};
       co_return 2;
@@ -85,13 +91,13 @@ TEST_CASE_METHOD(base_test_case_t,
     auto [exception_forwarded_event, exception_forwarded_token] =
         event_t::create("Exception forwarded");
 
-    auto coro = []() -> cf::task<int>
+    auto coro = []() -> default_task_t<int>
     {
       throw test_exception_t{};
       co_return 2;
     };
 
-    auto coro_2 = [&]() mutable -> cf::task<int>
+    auto coro_2 = [&]() mutable -> default_task_t<int>
     {
       try
       {
@@ -124,13 +130,13 @@ TEST_CASE_METHOD(base_test_case_t,
         event_t::create("Exception forwarded");
     auto [exception_forwarded_2_event, exception_forwarded_2_token] =
         event_t::create("Exception forwarded 2");
-    auto coro = []() -> cf::task<int>
+    auto coro = []() -> default_task_t<int>
     {
       throw test_exception_t{};
       co_return 2;
     };
 
-    auto coro_2 = [&]() mutable -> cf::task<int>
+    auto coro_2 = [&]() mutable -> default_task_t<int>
     {
       try
       {
@@ -145,7 +151,7 @@ TEST_CASE_METHOD(base_test_case_t,
       co_return -1;
     };
 
-    auto coro_3 = [&]() mutable -> cf::task<int>
+    auto coro_3 = [&]() mutable -> default_task_t<int>
     {
       try
       {
@@ -178,9 +184,9 @@ TEST_CASE_METHOD(base_test_case_t,
     auto [exception_forwarded_event, exception_forwarded_token] =
         event_t::create("Exception forwarded");
 
-    auto coro = []() -> cf::task<int> { co_return 2; };
+    auto coro = []() -> default_task_t<int> { co_return 2; };
 
-    auto coro_2 = [&]() mutable -> cf::task<int>
+    auto coro_2 = [&]() mutable -> default_task_t<int>
     {
       int result = co_await coro();
       throw test_exception_t{};
@@ -205,13 +211,13 @@ TEST_CASE_METHOD(base_test_case_t,
     auto [exception_forwarded_event, exception_forwarded_token] =
         event_t::create("Exception forwarded");
 
-    auto coro = []() -> cf::task<int>
+    auto coro = []() -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro");
       co_return 2;
     };
 
-    auto coro_2 = [&]() mutable -> cf::task<int>
+    auto coro_2 = [&]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2");
       int result = co_await coro();
@@ -221,7 +227,7 @@ TEST_CASE_METHOD(base_test_case_t,
 
       co_return result;
     };
-    auto coro_3 = [&]() mutable -> cf::task<int>
+    auto coro_3 = [&]() mutable -> default_task_t<int>
     {
       try
       {
@@ -256,7 +262,7 @@ TEST_CASE_METHOD(base_test_case_t, "Exception during schedule", "[task]")
     simple_thread_pool_t thread_pool;
     thread_pool.set_throw_at_schedule(0);
 
-    auto coro = []() -> cf::task<int> { co_return 2; };
+    auto coro = []() -> default_task_t<int> { co_return 2; };
 
     REQUIRE_THROWS_AS(cf::sync_wait(coro(), &thread_pool), test_exception_t);
     handle_error(std::move(thread_pool));
@@ -273,8 +279,8 @@ TEST_CASE_METHOD(base_test_case_t,
     simple_thread_pool_t thread_pool;
     thread_pool.set_throw_at_schedule(1);
 
-    auto coro = []() -> cf::task<int> { co_return 2; };
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro = []() -> default_task_t<int> { co_return 2; };
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       int result = co_await coro();
       co_return result + 1;
@@ -294,7 +300,7 @@ TEST_CASE_METHOD(base_test_case_t, "Exception during move", "[task]")
 
     using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
 
     REQUIRE_THROWS_AS(cf::sync_wait(coro(), &thread_pool), test_exception_t);
@@ -310,9 +316,9 @@ TEST_CASE_METHOD(base_test_case_t, "Exception during move 2nd level", "[task]")
 
     using CurrentThrowingClass = ThrowingClass<false, false, true, true>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       co_await coro();
       co_return 2;
@@ -331,7 +337,7 @@ TEST_CASE_METHOD(base_test_case_t, "No Exception during move assign", "[task]")
 
     using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
 
     cf::sync_wait(coro(), &thread_pool);
@@ -351,9 +357,9 @@ TEST_CASE_METHOD(base_test_case_t,
 
     using CurrentThrowingClass = ThrowingClass<false, false, false, true>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       auto result = co_await coro();
       co_return 2;
@@ -375,7 +381,7 @@ TEST_CASE_METHOD(base_test_case_t,
 
     using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
 
     cf::sync_wait(coro(), &thread_pool);
@@ -395,9 +401,9 @@ TEST_CASE_METHOD(base_test_case_t,
 
     using CurrentThrowingClass = ThrowingClass<true, true, false, false>;
 
-    auto coro = []() -> cf::task<CurrentThrowingClass>
+    auto coro = []() -> default_task_t<CurrentThrowingClass>
     { co_return CurrentThrowingClass{}; };
-    auto coro_2 = [&]() -> cf::task<int>
+    auto coro_2 = [&]() -> default_task_t<int>
     {
       auto result = co_await coro();
       co_return 2;
@@ -416,7 +422,7 @@ TEST_CASE("Exception during copy in nonmovable class", "[task]")
 
   using CurrentThrowingClass = NonMovableThrowingClass<true, true>;
 
-  auto coro = []() -> cf::task<CurrentThrowingClass>
+  auto coro = []() -> default_task_t<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
 
   REQUIRE_THROWS_AS(coro().run_async(&thread_pool).sync_wait().h(),
@@ -428,9 +434,9 @@ TEST_CASE("Exception during copy in nonmovable class 2nd level", "[task]")
 
   using CurrentThrowingClass = NonMovableThrowingClass<true, true>;
 
-  auto coro = []() -> cf::task<CurrentThrowingClass>
+  auto coro = []() -> default_task_t<CurrentThrowingClass>
   { co_return CurrentThrowingClass{}; };
-  auto coro_2 = [&]() -> cf::task<int>
+  auto coro_2 = [&]() -> default_task_t<int>
   {
     co_await coro();
     co_return 2;
