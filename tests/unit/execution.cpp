@@ -9,6 +9,7 @@
 #include <coroutine_flow/__details/testing/simple_thread_pool.hpp>
 #include <coroutine_flow/__details/testing/test_config.hpp>
 
+#include <coroutine_flow/extensions/promise_extension.hpp>
 #include <coroutine_flow/profiler.hpp>
 #include <coroutine_flow/task.hpp>
 
@@ -24,13 +25,16 @@ using cf::__details::testing::memory_check_t;
 using cf::__details::testing::simple_thread_pool_t;
 using cf::__details::testing::test_exception_t;
 
+template <typename T>
+using default_task_t = cf::task_t<T, cf::extensions::promise_extension_t>;
+
 constexpr const auto c_test_case_timeout =
     cf::__details::testing::c_test_case_timeout;
 
 struct async_execution_policy_t
 {
     template <typename scheduler_t, typename R>
-    auto run_task(scheduler_t* scheduler, cf::task<R>&& task)
+    auto run_task(scheduler_t* scheduler, default_task_t<R>&& task)
     {
       cf::run_async(std::move(task), scheduler);
     }
@@ -39,7 +43,7 @@ struct async_execution_policy_t
 struct sync_execution_policy_t
 {
     template <typename scheduler_t, typename R>
-    auto run_task(scheduler_t* scheduler, cf::task<R>&& task)
+    auto run_task(scheduler_t* scheduler, default_task_t<R>&& task)
     {
       return cf::sync_wait(std::move(task), scheduler);
     }
@@ -88,7 +92,8 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto thread_pool = test_controller_t<TestType>::create_scheduler();
     auto [called_event, called_token] = event_t::create("coroutine is called");
 
-    auto coro_1 = [p_called_event = &called_event]() mutable -> cf::task<int>
+    auto coro_1 = [p_called_event =
+                       &called_event]() mutable -> default_task_t<int>
     {
       p_called_event->trigger();
       co_return 1;
@@ -115,7 +120,8 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto [called_event_1, called_token_1] =
         event_t::create("coroutine 1 is called");
 
-    auto coro_1 = [p_called_event = &called_event_1]() mutable -> cf::task<int>
+    auto coro_1 = [p_called_event =
+                       &called_event_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       p_called_event->trigger();
@@ -126,7 +132,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 2 is called");
 
     auto coro_2 = [p_called_event = &called_event_2,
-                   &coro_1]() mutable -> cf::task<int>
+                   &coro_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2_1");
 
@@ -162,7 +168,8 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto [called_event_1, called_token_1] =
         event_t::create("coroutine 1 is called");
 
-    auto coro_1 = [p_called_event = &called_event_1]() mutable -> cf::task<int>
+    auto coro_1 = [p_called_event =
+                       &called_event_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
 
@@ -175,7 +182,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 2 is called");
 
     auto coro_2 = [p_called_event = &called_event_2,
-                   &coro_1]() mutable -> cf::task<int>
+                   &coro_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2");
 
@@ -191,7 +198,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 3 is called");
 
     auto coro_3 = [p_called_event = &called_event_3,
-                   &coro_2]() mutable -> cf::task<int>
+                   &coro_2]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3");
 
@@ -228,7 +235,8 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto [called_event_1, called_token_1] =
         event_t::create("coroutine 1 is called");
 
-    auto coro_1 = [p_called_event = &called_event_1]() mutable -> cf::task<int>
+    auto coro_1 = [p_called_event =
+                       &called_event_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       p_called_event->trigger();
@@ -240,7 +248,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 2 is called");
 
     auto coro_2 = [p_called_event = &called_event_2,
-                   &coro_1]() mutable -> cf::task<int>
+                   &coro_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2-0");
       int result = co_await coro_1();
@@ -255,7 +263,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 3 is called");
 
     auto coro_3 = [p_called_event = &called_event_3,
-                   &coro_2]() mutable -> cf::task<int>
+                   &coro_2]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3-0");
       int result = co_await coro_2();
@@ -268,7 +276,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto [called_event_4, called_token_4] =
         event_t::create("coroutine 4 is called");
     auto coro_4 = [p_called_event = &called_event_4,
-                   &coro_3]() mutable -> cf::task<int>
+                   &coro_3]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_4-0");
       int result = co_await coro_3();
@@ -305,7 +313,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 1 is called");
     std::atomic_uint32_t coro_1_call_count = 0;
     auto coro_1 = [p_called_event = &called_event_1,
-                   &coro_1_call_count]() mutable -> cf::task<int>
+                   &coro_1_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       coro_1_call_count++;
@@ -320,7 +328,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2 01");
       int result = co_await coro_1();
@@ -366,7 +374,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
     auto coro_1 = [p_called_event = &called_event_1,
                    &p_coro_call_count =
-                       coro_1_call_count]() mutable -> cf::task<int>
+                       coro_1_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
 
@@ -383,7 +391,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2 01");
 
@@ -406,7 +414,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_3 = [p_called_event = &called_event_3,
                    &coro_2,
                    &p_coro_call_count =
-                       coro_3_call_count]() mutable -> cf::task<int>
+                       coro_3_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3 01");
 
@@ -459,7 +467,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
     auto coro_1 = [p_called_event = &called_event_1,
                    &p_coro_call_count =
-                       coro_1_call_count]() mutable -> cf::task<int>
+                       coro_1_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       p_coro_call_count++;
@@ -475,7 +483,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2 01");
 
@@ -500,7 +508,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_3 = [p_called_event = &called_event_3,
                    &coro_2,
                    &p_coro_call_count =
-                       coro_3_call_count]() mutable -> cf::task<int>
+                       coro_3_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3 01");
 
@@ -525,7 +533,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_4 = [p_called_event = &called_event_4,
                    &coro_3,
                    &p_coro_call_count =
-                       coro_4_call_count]() mutable -> cf::task<int>
+                       coro_4_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_4 01");
 
@@ -570,7 +578,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 1 is called");
     std::atomic_uint32_t coro_1_call_count = 0;
     auto coro_1 = [p_called_event = &called_event_1,
-                   &coro_1_call_count]() mutable -> cf::task<int>
+                   &coro_1_call_count]() mutable -> default_task_t<int>
     {
       coro_1_call_count++;
       p_called_event->trigger();
@@ -584,7 +592,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       int result = co_await coro_1();
       REQUIRE(result == 1);
@@ -627,7 +635,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
     auto coro_1 = [p_called_event = &called_event_1,
                    &p_coro_call_count =
-                       coro_1_call_count]() mutable -> cf::task<int>
+                       coro_1_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       p_coro_call_count++;
@@ -643,7 +651,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2 01");
 
@@ -672,7 +680,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_3 = [p_called_event = &called_event_3,
                    &coro_2,
                    &p_coro_call_count =
-                       coro_3_call_count]() mutable -> cf::task<int>
+                       coro_3_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3 01");
 
@@ -728,7 +736,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
 
     auto coro_1 = [p_called_event = &called_event_1,
                    &p_coro_call_count =
-                       coro_1_call_count]() mutable -> cf::task<int>
+                       coro_1_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       p_coro_call_count++;
@@ -744,7 +752,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_2 = [p_called_event = &called_event_2,
                    &coro_1,
                    &p_coro_call_count =
-                       coro_2_call_count]() mutable -> cf::task<int>
+                       coro_2_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_2 01");
 
@@ -773,7 +781,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_3 = [p_called_event = &called_event_3,
                    &coro_2,
                    &p_coro_call_count =
-                       coro_3_call_count]() mutable -> cf::task<int>
+                       coro_3_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3 01");
 
@@ -802,7 +810,7 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
     auto coro_4 = [p_called_event = &called_event_4,
                    &coro_3,
                    &p_coro_call_count =
-                       coro_4_call_count]() mutable -> cf::task<int>
+                       coro_4_call_count]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_4 01");
 
@@ -857,21 +865,22 @@ TEMPLATE_TEST_CASE_METHOD(test_controller_t,
         event_t::create("coroutine 2 is called");
     auto [called_event_3, called_token_3] =
         event_t::create("coroutine 3 is called");
-    auto coro_1 = [event = &called_event_1]() mutable -> cf::task<int>
+    auto coro_1 = [event = &called_event_1]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_1");
       event->trigger();
       co_return 2;
     };
 
-    auto coro_2 = [event = &called_event_2]() mutable -> cf::task<std::string>
+    auto coro_2 = [event =
+                       &called_event_2]() mutable -> default_task_t<std::string>
     {
       CF_PROFILE_MARK("coro_2");
       event->trigger();
       co_return "42";
     };
 
-    auto coro_3 = [&, event = &called_event_3]() mutable -> cf::task<int>
+    auto coro_3 = [&, event = &called_event_3]() mutable -> default_task_t<int>
     {
       CF_PROFILE_MARK("coro_3 01");
       int number = co_await coro_1();
@@ -898,7 +907,7 @@ TEST_CASE_METHOD(base_test_case_t, "Check get function", "[task]")
   memory_check_t memory_checker;
   {
     simple_thread_pool_t thread_pool;
-    auto coro = []() -> cf::task<int> { co_return 2; };
+    auto coro = []() -> default_task_t<int> { co_return 2; };
     auto result = cf::sync_wait(coro(), &thread_pool);
     REQUIRE(result == 2);
     handle_error(std::move(thread_pool));

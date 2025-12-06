@@ -64,9 +64,9 @@ This library optionally integrates tracy. With this one can easily follow what r
 
 ## Stability
 
-Current Test Coverage: 78.6%. [See the llvm report](./documentation/coverage.report)
+Current Test Coverage: 78.8%. [See the llvm report](./documentation/coverage.report)
 
-Currently 84 tests are defined to check
+Currently 86 tests are defined to check
  - proper allocations/deallocations (promises and awaiters as well)
  - Different return types
  - Exception handlings
@@ -74,3 +74,22 @@ Currently 84 tests are defined to check
 
 Why not 100% Coverage?
 Template execution causes some glitch in the measurements and right now only `std::promise` can be used as the result receiver. And `std::promise` doesn't support classes that are not moveable but copiable.
+The other reason is about return type tests when a class throws. These create new
+types and new template instantiations that has leaks according to the check. Similar glitch occurs during tag_invoke test.
+
+The coverages per file:
+Filename                              |  Regions |   Cover |  Functions | Executed  |     Lines |    Cover |   Branches |    Cover
+--------------------------------------|----------|---------|------------|-----------|-----------|----------|------------|---------
+__details/scope_exit.hpp              |        3 | 100.00% |          2 |  100.00%  |         4 |  100.00% |          0 |        -
+__details/final_coroutine.hpp         |       71 |  54.93% |         22 |   68.18%  |        76 |   85.53% |         12 |   58.33%
+__details/coroutine_chain.hpp         |       25 | 100.00% |          8 |  100.00%  |       112 |  100.00% |         14 |   92.86%
+__details/task_awaiter.hpp            |       34 |  85.29% |          4 |  100.00%  |        83 |  100.00% |         14 |   78.57%
+__details/testing/test_injection.hpp  |        5 | 100.00% |          4 |  100.00%  |        16 |  100.00% |          2 |  100.00%
+__details/task_promise.hpp            |       46 |  78.26% |         17 |  100.00%  |        98 |  100.00% |         10 |   80.00%
+__details/continuation_data.hpp       |        8 |  87.50% |          8 |   87.50%  |        38 |   84.21% |          0 |        -
+__details/final_executor.hpp          |       12 | 100.00% |          8 |  100.00%  |        25 |  100.00% |          0 |        -
+extensions/promise_extension.hpp      |       20 |  75.00% |          7 |  100.00%  |        20 |  100.00% |          4 |   75.00%
+tag_invoke.hpp                        |        2 |  50.00% |          2 |   50.00%  |         6 |   50.00% |          0 |        -
+task.hpp                              |       29 |  96.55% |         10 |  100.00%  |       186 |   97.31% |          8 |   87.50%
+--
+TOTAL                                 |      255 |  78.43% |         92 |   90.22%  |       664 |   96.23% |         64 |   79.69%
