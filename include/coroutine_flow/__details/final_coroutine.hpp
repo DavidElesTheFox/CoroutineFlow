@@ -51,17 +51,7 @@ class final_coroutine_t
           assert(handle.is_empty() == false);
           assert(handle.coro.done() == false &&
                  "The final coroutine shouldn't be done already.");
-          // TODO: ERROR: Sometimes the task_promise got destroyed when we are
-          // here.
-          /*Here is the problem: suspended_handle is only valid when
-          destroy_suspended_handle is true otherwise it might already be
-          destroyed by scope_exit of continue_suspended_handle - we would like
-          to maintain the lifetime of the intermediate coroutines to ensure the
-          return value validity So the solution is a guard that doesn't allow
-          the scope_exit to destroy this handle until the finalizer is not set
-          below!
 
-          */
           assert(
               suspended_handle.done() &&
               "The final handle will not continue the suspended handle. Thus "
