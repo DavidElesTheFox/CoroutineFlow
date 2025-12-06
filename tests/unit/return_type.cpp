@@ -230,3 +230,44 @@ TEST_CASE_METHOD(base_test_case_t,
   }
   memory_checker.check();
 }
+
+TEST_CASE_METHOD(base_test_case_t, "Void task", "[task]")
+{
+  memory_check_t memory_checker;
+  {
+    simple_thread_pool_t thread_pool;
+
+    auto coro_1 = [&]() mutable -> default_task_t<void> { co_return; };
+
+    auto coro_2 = [&]() -> default_task_t<void> { co_await coro_1(); };
+
+    cf::sync_wait(coro_2(), &thread_pool);
+    SUCCEED("This test needs to be only compiled");
+    handle_error(std::move(thread_pool));
+  }
+  memory_checker.check();
+}
+
+TEST_CASE_METHOD(base_test_case_t, "Void task async run", "[task]")
+{
+  using namespace std::chrono_literals;
+  memory_check_t memory_checker;
+  {
+    simple_thread_pool_t thread_pool;
+
+    std::promise<void> finished;
+    auto finished_future = finished.get_future();
+    auto coro_1 = [&]() mutable -> default_task_t<void> { co_return; };
+
+    auto coro_2 = [&]() -> default_task_t<void>
+    {
+      co_await coro_1();
+      finished.set_value();
+    };
+
+    cf::run_async(coro_2(), &thread_pool);
+    REQUIRE(finished_future.wait_for(30s) == std::future_status::ready);
+    handle_error(std::move(thread_pool));
+  }
+  memory_checker.check();
+}
